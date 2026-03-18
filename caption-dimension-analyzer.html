@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Caption 多维度拆解工具</title>
+<style>
+  :root {
+    --bg-deep: #0F0B2A;
+    --bg-mid: #1A1040;
+    --bg-card: rgba(255, 255, 255, 0.06);
+    --border: rgba(255, 255, 255, 0.1);
+    --border-active: rgba(255, 255, 255, 0.22);
+    --text-primary: #F0EEFF;
+    --text-secondary: #B8AFDC;
+    --text-muted: #6B5F9E;
+
+    --c-scene:    #4ECCA3;
+    --c-style:    #B370E8;
+    --c-motion:   #FF6B35;
+    --c-atmo:     #64B5F6;
+    --c-camera:   #90A4AE;
+    --c-subject:  #FFD54F;
+    --c-text:     #FF8A80;
+    --c-temporal: #80DEEA;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'PingFang SC', 'Microsoft YaHei', -apple-system, sans-serif;
+    background: linear-gradient(160deg, var(--bg-deep) 0%, var(--bg-mid) 60%, #2A1060 100%);
+    min-height: 100vh;
+    color: var(--text-primary);
+    line-height: 1.6;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      radial-gradient(1px 1px at 10% 15%, rgba(255,255,255,0.55) 0%, transparent 100%),
+      radial-gradient(1px 1px at 27% 8%,  rgba(255,255,255,0.40) 0%, transparent 100%),
+      radial-gradient(1px 1px at 44% 21%, rgba(255,255,255,0.50) 0%, transparent 100%),
+      radial-gradient(1px 1px at 60% 5%,  rgba(255,255,255,0.65) 0%, transparent 100%),
+      radial-gradient(1px 1px at 74% 14%, rgba(255,255,255,0.40) 0%, transparent 100%),
+      radial-gradient(1px 1px at 89% 19%, rgba(255,255,255,0.48) 0%, transparent 100%),
+      radial-gradient(1.5px 1.5px at 18% 38%, rgba(255,255,200,0.45) 0%, transparent 100%),
+      radial-gradient(1.5px 1.5px at 65% 30%, rgba(255,255,200,0.38) 0%, transparent 100%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 0 28px 72px;
+  }
+
+  /* ===== Hero ===== */
+  .hero {
+    padding: 56px 0 40px;
+    text-align: center;
+  }
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(124, 92, 191, 0.18);
+    border: 1px solid rgba(124, 92, 191, 0.4);
+    border-radius: 100px;
+    padding: 5px 16px;
+    font-size: 12px;
+    color: #C4A8FF;
+    letter-spacing: 0.5px;
+    margin-bottom: 18px;
+  }
+  .hero-badge .dot {
+    width: 6px; height: 6px;
+    background: #C4A8FF;
+    border-radius: 50%;
+    animation: blink 2s infinite;
+  }
+  @keyframes blink {
+    0%,100% { opacity:1; } 50% { opacity:0.35; }
+  }
+  .hero h1 {
+    font-size: 32px;
+    font-weight: 700;
+    background: linear-gradient(130deg, #F0EEFF 30%, #C4A8FF 65%, #FFD700 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 10px;
+    letter-spacing: -0.3px;
+  }
+  .hero p {
+    font-size: 14px;
+    color: var(--text-secondary);
+    max-width: 480px;
+    margin: 0 auto;
+  }
+
+  /* ===== 维度图例 ===== */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    margin-bottom: 36px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+    user-select: none;
+  }
+  .legend-item:hover {
+    background: rgba(255,255,255,0.1);
+    border-color: var(--legend-color);
+    color: var(--legend-color);
+  }
+  .legend-item.hidden-dim {
+    opacity: 0.35;
+  }
+  .legend-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--legend-color);
+    flex-shrink: 0;
+  }
+
+  /* ===== 原文拆解展示区 ===== */
+  .caption-display {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 32px 36px;
+    backdrop-filter: blur(14px);
+    line-height: 0; /* 消除行内元素间距 */
+  }
+
+  /* 每个片段 */
+  .seg {
+    display: inline;
+    font-size: 15px;
+    line-height: 2;
+    color: var(--text-primary);
+    transition: opacity 0.25s;
+  }
+
+  /* 片段高亮背景色块 */
+  .seg-inner {
+    display: inline;
+    background: color-mix(in srgb, var(--seg-color) 14%, transparent);
+    border-bottom: 2px solid var(--seg-color);
+    border-radius: 2px;
+    padding: 1px 0;
+    cursor: default;
+    transition: background 0.2s;
+    position: relative;
+  }
+  .seg-inner:hover {
+    background: color-mix(in srgb, var(--seg-color) 26%, transparent);
+  }
+
+  /* 维度标签（hover时显示） */
+  .seg-inner .dim-label {
+    display: none;
+    position: absolute;
+    top: -28px;
+    left: 0;
+    background: var(--seg-color);
+    color: #000;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 5px;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 10;
+    letter-spacing: 0.3px;
+  }
+  .seg-inner .dim-label::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 10px;
+    width: 6px; height: 6px;
+    background: var(--seg-color);
+    clip-path: polygon(0 0, 100% 0, 50% 100%);
+  }
+  .seg-inner:hover .dim-label {
+    display: block;
+  }
+
+  /* 隐藏某维度时片段变灰 */
+  .seg.dim-hidden .seg-inner {
+    background: transparent;
+    border-bottom-color: rgba(255,255,255,0.1);
+    color: var(--text-muted);
+  }
+  .seg.dim-hidden .seg-inner:hover .dim-label {
+    display: none;
+  }
+
+  /* ===== 侧边维度列表（固定在右侧） ===== */
+  .side-legend {
+    position: fixed;
+    right: max(20px, calc((100vw - 860px) / 2 - 180px));
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 10;
+  }
+  .side-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    background: rgba(15, 11, 42, 0.85);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+    backdrop-filter: blur(8px);
+    white-space: nowrap;
+    user-select: none;
+  }
+  .side-item:hover {
+    border-color: var(--side-color);
+    color: var(--side-color);
+    background: rgba(15, 11, 42, 0.95);
+  }
+  .side-item.hidden-dim {
+    opacity: 0.4;
+  }
+  .side-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--side-color);
+    flex-shrink: 0;
+    transition: opacity 0.2s;
+  }
+
+  /* ===== 底部复制栏 ===== */
+  .bottom-bar {
+    margin-top: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .bottom-note {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .copy-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: linear-gradient(135deg, rgba(124,92,191,0.3), rgba(64,104,200,0.3));
+    border: 1px solid rgba(124,92,191,0.4);
+    border-radius: 10px;
+    padding: 9px 20px;
+    font-size: 13px;
+    color: #C4A8FF;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+  .copy-btn:hover {
+    background: linear-gradient(135deg, rgba(124,92,191,0.5), rgba(64,104,200,0.5));
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(124,92,191,0.25);
+  }
+  .copy-btn.copied {
+    background: rgba(78,204,163,0.18);
+    border-color: rgba(78,204,163,0.4);
+    color: #4ECCA3;
+  }
+
+  .footer {
+    text-align: center;
+    margin-top: 40px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  /* ===== 分隔线 ===== */
+  .section-divider {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 56px 0 40px;
+  }
+  .section-divider::before,
+  .section-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+  }
+  .section-divider-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 18px;
+    background: rgba(124,92,191,0.15);
+    border: 1px solid rgba(124,92,191,0.3);
+    border-radius: 100px;
+    font-size: 12px;
+    color: #C4A8FF;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+  }
+
+  /* ===== 维度合并展示区 ===== */
+  .merged-section {}
+
+  .merged-section-header {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+  .merged-section-header h2 {
+    font-size: 22px;
+    font-weight: 700;
+    background: linear-gradient(130deg, #F0EEFF 30%, #C4A8FF 70%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 8px;
+  }
+  .merged-section-header p {
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  /* 每个维度合并块 */
+  .dim-block {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    margin-bottom: 12px;
+    overflow: hidden;
+    backdrop-filter: blur(12px);
+    transition: border-color 0.25s;
+  }
+  .dim-block:hover {
+    border-color: var(--dim-color);
+  }
+
+  .dim-block-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.25s, background 0.25s;
+  }
+  .dim-block.open .dim-block-header {
+    border-bottom-color: var(--border);
+    background: color-mix(in srgb, var(--dim-color) 6%, transparent);
+  }
+
+  .dim-block-color {
+    width: 4px;
+    height: 36px;
+    border-radius: 2px;
+    background: var(--dim-color);
+    flex-shrink: 0;
+  }
+
+  .dim-block-title {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .dim-block-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+  .dim-block-count {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 100px;
+    background: color-mix(in srgb, var(--dim-color) 15%, transparent);
+    color: var(--dim-color);
+    border: 1px solid color-mix(in srgb, var(--dim-color) 30%, transparent);
+  }
+
+  .dim-block-arrow {
+    font-size: 11px;
+    color: var(--text-muted);
+    transition: transform 0.25s;
+  }
+  .dim-block.open .dim-block-arrow {
+    transform: rotate(180deg);
+  }
+
+  .dim-block-body {
+    padding: 20px 24px;
+    display: none;
+  }
+  .dim-block.open .dim-block-body {
+    display: block;
+    animation: slideDown 0.25s ease;
+  }
+  @keyframes slideDown {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* 合并文本容器 */
+  .merged-text {
+    font-size: 15px;
+    line-height: 2.2;
+    color: var(--text-primary);
+    background: rgba(0,0,0,0.18);
+    border-radius: 10px;
+    padding: 16px 18px;
+    border-left: 3px solid var(--dim-color);
+  }
+
+  /* 块底部复制按钮 */
+  .dim-block-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 14px;
+  }
+  .dim-copy-btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .dim-copy-btn:hover {
+    background: color-mix(in srgb, var(--dim-color) 12%, transparent);
+    border-color: var(--dim-color);
+    color: var(--dim-color);
+  }
+  .dim-copy-btn.copied {
+    background: rgba(78,204,163,0.12);
+    border-color: rgba(78,204,163,0.35);
+    color: #4ECCA3;
+  }
+
+  /* 侧栏太窄时隐藏 */
+  @media (max-width: 1160px) {
+    .side-legend { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-badge"><span class="dot"></span>原文顺序 · 按维度切分</div>
+    <h1>Caption 多维度拆解</h1>
+    <p>保持原文顺序，将描述直接切分为各维度片段，点击图例可隐藏/显示对应维度</p>
+  </div>
+
+  <!-- 图例（顶部） -->
+  <div class="legend">
+    <div class="legend-item" style="--legend-color:var(--c-scene)"    onclick="toggleDim('scene',this)">
+      <span class="legend-dot"></span>场景
+    </div>
+    <div class="legend-item" style="--legend-color:var(--c-subject)"  onclick="toggleDim('subject',this)">
+      <span class="legend-dot"></span>主体
+    </div>
+    <div class="legend-item" style="--legend-color:var(--c-motion)"   onclick="toggleDim('motion',this)">
+      <span class="legend-dot"></span>运动
+    </div>
+    <div class="legend-item" style="--legend-color:var(--c-text)"     onclick="toggleDim('textlabel',this)">
+      <span class="legend-dot"></span>文本版式
+    </div>
+    <div class="legend-item" style="--legend-color:var(--c-camera)"   onclick="toggleDim('camera',this)">
+      <span class="legend-dot"></span>镜头语言
+    </div>
+    <div class="legend-item" style="--legend-color:var(--c-atmo)"     onclick="toggleDim('atmosphere',this)">
+      <span class="legend-dot"></span>氛围
+    </div>
+    <div class="legend-item" style="--legend-color:var(--c-style)"    onclick="toggleDim('style',this)">
+      <span class="legend-dot"></span>视觉风格
+    </div>
+    <div class="legend-item" style="--legend-color:var(--c-temporal)" onclick="toggleDim('temporal',this)">
+      <span class="legend-dot"></span>时序变化
+    </div>
+  </div>
+
+  <!-- 原文拆解 -->
+  <div class="caption-display" id="captionDisplay">
+
+    <span class="seg" data-dim="scene" style="--seg-color:var(--c-scene)">
+      <span class="seg-inner"><span class="dim-label">场景</span>这是一幅描绘两个卡通角色在野外露营的竖版画面。</span>
+    </span>
+
+    <span class="seg" data-dim="scene" style="--seg-color:var(--c-scene)">
+      <span class="seg-inner"><span class="dim-label">场景</span>主体位于一片广阔的紫色草地中央，草地上散落着一些发光的小光点。</span>
+    </span>
+
+    <span class="seg" data-dim="subject" style="--seg-color:var(--c-subject)">
+      <span class="seg-inner"><span class="dim-label">主体</span>一个绿色的圆顶帐篷搭建在此，帐篷门帘向两侧拉开，露出内部铺着米色床垫的休息区，上面放着一个粉色枕头，还有一个黄色的方形小灯笼，灯笼上有三个五角星形状的镂空图案，并发出温暖的黄光。</span>
+    </span>
+
+    <span class="seg" data-dim="subject" style="--seg-color:var(--c-subject)">
+      <span class="seg-inner"><span class="dim-label">主体</span>帐篷外，一只白色的兔子坐在左侧，它有着长长的耳朵，黑色的眼睛，头上戴着一顶小小的金色皇冠，右手拿着一颗黄色的五角星。</span>
+    </span>
+
+    <span class="seg" data-dim="subject" style="--seg-color:var(--c-subject)">
+      <span class="seg-inner"><span class="dim-label">主体</span>它的右边是一个矮胖的白色生物，头顶上放着一个橙色的小南瓜，</span>
+    </span><span class="seg" data-dim="motion" style="--seg-color:var(--c-motion)">
+      <span class="seg-inner"><span class="dim-label">运动</span>双手捧着一块棕色的食物正在啃食。</span>
+    </span>
+
+    <span class="seg" data-dim="motion" style="--seg-color:var(--c-motion)">
+      <span class="seg-inner"><span class="dim-label">运动</span>两者之间是一堆燃烧正旺的篝火，火焰呈红色和橙色，</span>
+    </span><span class="seg" data-dim="subject" style="--seg-color:var(--c-subject)">
+      <span class="seg-inner"><span class="dim-label">主体</span>周围环绕着一圈灰色石头。</span>
+    </span>
+
+    <span class="seg" data-dim="subject" style="--seg-color:var(--c-subject)">
+      <span class="seg-inner"><span class="dim-label">主体</span>兔子旁边有一个矮小的树桩充当凳子。帐篷左边立着一根细长的木杆，顶端悬挂着一盏复古造型的玻璃提灯，同样散发着光芒。</span>
+    </span>
+
+    <span class="seg" data-dim="scene" style="--seg-color:var(--c-scene)">
+      <span class="seg-inner"><span class="dim-label">场景</span>背景部分，近处是起伏的深色山丘轮廓，更远处则是从地平线附近的暖橙色向上过渡到顶部的深蓝紫色渐变夜空，天空中散布着明亮的星星。</span>
+    </span>
+
+    <span class="seg" data-dim="temporal" style="--seg-color:var(--c-temporal)">
+      <span class="seg-inner"><span class="dim-label">时序变化</span>一轮巨大而耀眼的黄色新月悬挂在山丘之上，其下半部分被山丘遮挡。</span>
+    </span>
+
+    <span class="seg" data-dim="textlabel" style="--seg-color:var(--c-text)">
+      <span class="seg-inner"><span class="dim-label">文本版式</span>画面右下角有一组白色的文字标识：上方是一个白底黑字的圆角矩形图标，里面写着"小红书"；紧接着下方是一行较小的白色文字，内容为"小红书号: 108702984"。</span>
+    </span>
+
+    <span class="seg" data-dim="camera" style="--seg-color:var(--c-camera)">
+      <span class="seg-inner"><span class="dim-label">镜头语言</span>该画面为中景平视镜头，</span>
+    </span><span class="seg" data-dim="atmosphere" style="--seg-color:var(--c-atmo)">
+      <span class="seg-inner"><span class="dim-label">氛围</span>光线主要来自月亮、篝火和提灯等多个光源，共同照亮了中心区域，形成了明暗对比，营造出一种宁静、温馨且梦幻的氛围。</span>
+    </span>
+
+    <span class="seg" data-dim="style" style="--seg-color:var(--c-style)">
+      <span class="seg-inner"><span class="dim-label">视觉风格</span>色彩上运用了大量的紫色调，属于冷暖对比色调。</span>
+    </span>
+
+    <span class="seg" data-dim="camera" style="--seg-color:var(--c-camera)">
+      <span class="seg-inner"><span class="dim-label">镜头语言</span>构图为稳定的居中构图。</span>
+    </span>
+
+    <span class="seg" data-dim="style" style="--seg-color:var(--c-style)">
+      <span class="seg-inner"><span class="dim-label">视觉风格</span>具有柔和光影和细腻质感的可爱三维卡通渲染风格。</span>
+    </span>
+
+  </div>
+
+  <!-- 底部操作栏 -->
+  <div class="bottom-bar">
+    <div class="bottom-note">悬停片段查看维度标注 · 点击图例可过滤显示</div>
+    <button class="copy-btn" id="copyBtn" onclick="copyAll()">📋 复制完整原文</button>
+  </div>
+
+  <div class="footer" style="margin-top:16px;">Caption 多维度拆解工具 · 保持原文顺序 · 按维度高亮切分</div>
+
+  <!-- ===== 分隔线 ===== -->
+  <div class="section-divider">
+    <div class="section-divider-label">🧩 维度合并展示</div>
+  </div>
+
+  <!-- ===== 维度合并展示区 ===== -->
+  <div class="merged-section">
+    <div class="merged-section-header">
+      <h2>按维度拼接组合</h2>
+      <p>同一维度的片段合并在一起，点击展开查看详情与原始切分</p>
+    </div>
+
+    <!-- 场景 -->
+    <div class="dim-block open" style="--dim-color:var(--c-scene)" id="block-scene">
+      <div class="dim-block-header" onclick="toggleBlock('block-scene')">
+        <div class="dim-block-color"></div>
+        <div class="dim-block-title">
+          <span style="font-size:18px">🏕️</span>
+          <span class="dim-block-name">场景</span>
+          <span class="dim-block-count">3 段</span>
+        </div>
+        <span class="dim-block-arrow">▼</span>
+      </div>
+      <div class="dim-block-body">
+        <div class="merged-text" id="merged-scene">这是一幅描绘两个卡通角色在野外露营的竖版画面。主体位于一片广阔的紫色草地中央，草地上散落着一些发光的小光点。背景部分，近处是起伏的深色山丘轮廓，更远处则是从地平线附近的暖橙色向上过渡到顶部的深蓝紫色渐变夜空，天空中散布着明亮的星星。</div>
+        <div class="dim-block-footer">
+          <button class="dim-copy-btn" style="--dim-color:var(--c-scene)" onclick="copyDim(this,'merged-scene')">📋 复制</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 主体 -->
+    <div class="dim-block open" style="--dim-color:var(--c-subject)" id="block-subject">
+      <div class="dim-block-header" onclick="toggleBlock('block-subject')">
+        <div class="dim-block-color"></div>
+        <div class="dim-block-title">
+          <span style="font-size:18px">🐰</span>
+          <span class="dim-block-name">主体</span>
+          <span class="dim-block-count">5 段</span>
+        </div>
+        <span class="dim-block-arrow">▼</span>
+      </div>
+      <div class="dim-block-body">
+        <div class="merged-text" id="merged-subject">一个绿色的圆顶帐篷搭建在此，帐篷门帘向两侧拉开，露出内部铺着米色床垫的休息区，上面放着一个粉色枕头，还有一个黄色的方形小灯笼，灯笼上有三个五角星形状的镂空图案，并发出温暖的黄光。帐篷外，一只白色的兔子坐在左侧，它有着长长的耳朵，黑色的眼睛，头上戴着一顶小小的金色皇冠，右手拿着一颗黄色的五角星。它的右边是一个矮胖的白色生物，头顶上放着一个橙色的小南瓜。周围环绕着一圈灰色石头。兔子旁边有一个矮小的树桩充当凳子。帐篷左边立着一根细长的木杆，顶端悬挂着一盏复古造型的玻璃提灯，同样散发着光芒。</div>
+        <div class="dim-block-footer">
+          <button class="dim-copy-btn" style="--dim-color:var(--c-subject)" onclick="copyDim(this,'merged-subject')">📋 复制</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 运动 -->
+    <div class="dim-block open" style="--dim-color:var(--c-motion)" id="block-motion">
+      <div class="dim-block-header" onclick="toggleBlock('block-motion')">
+        <div class="dim-block-color"></div>
+        <div class="dim-block-title">
+          <span style="font-size:18px">🔥</span>
+          <span class="dim-block-name">运动</span>
+          <span class="dim-block-count">2 段</span>
+        </div>
+        <span class="dim-block-arrow">▼</span>
+      </div>
+      <div class="dim-block-body">
+        <div class="merged-text" id="merged-motion">双手捧着一块棕色的食物正在啃食。两者之间是一堆燃烧正旺的篝火，火焰呈红色和橙色。</div>
+        <div class="dim-block-footer">
+          <button class="dim-copy-btn" style="--dim-color:var(--c-motion)" onclick="copyDim(this,'merged-motion')">📋 复制</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 时序变化 -->
+    <div class="dim-block open" style="--dim-color:var(--c-temporal)" id="block-temporal">
+      <div class="dim-block-header" onclick="toggleBlock('block-temporal')">
+        <div class="dim-block-color"></div>
+        <div class="dim-block-title">
+          <span style="font-size:18px">⏳</span>
+          <span class="dim-block-name">时序变化</span>
+          <span class="dim-block-count">1 段</span>
+        </div>
+        <span class="dim-block-arrow">▼</span>
+      </div>
+      <div class="dim-block-body">
+        <div class="merged-text" id="merged-temporal">一轮巨大而耀眼的黄色新月悬挂在山丘之上，其下半部分被山丘遮挡。</div>
+        <div class="dim-block-footer">
+          <button class="dim-copy-btn" style="--dim-color:var(--c-temporal)" onclick="copyDim(this,'merged-temporal')">📋 复制</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 文本版式 -->
+    <div class="dim-block open" style="--dim-color:var(--c-text)" id="block-textlabel">
+      <div class="dim-block-header" onclick="toggleBlock('block-textlabel')">
+        <div class="dim-block-color"></div>
+        <div class="dim-block-title">
+          <span style="font-size:18px">📝</span>
+          <span class="dim-block-name">文本版式</span>
+          <span class="dim-block-count">1 段</span>
+        </div>
+        <span class="dim-block-arrow">▼</span>
+      </div>
+      <div class="dim-block-body">
+        <div class="merged-text" id="merged-textlabel">画面右下角有一组白色的文字标识：上方是一个白底黑字的圆角矩形图标，里面写着"小红书"；紧接着下方是一行较小的白色文字，内容为"小红书号: 108702984"。</div>
+        <div class="dim-block-footer">
+          <button class="dim-copy-btn" style="--dim-color:var(--c-text)" onclick="copyDim(this,'merged-textlabel')">📋 复制</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 镜头语言 -->
+    <div class="dim-block open" style="--dim-color:var(--c-camera)" id="block-camera">
+      <div class="dim-block-header" onclick="toggleBlock('block-camera')">
+        <div class="dim-block-color"></div>
+        <div class="dim-block-title">
+          <span style="font-size:18px">📷</span>
+          <span class="dim-block-name">镜头语言</span>
+          <span class="dim-block-count">2 段</span>
+        </div>
+        <span class="dim-block-arrow">▼</span>
+      </div>
+      <div class="dim-block-body">
+        <div class="merged-text" id="merged-camera">该画面为中景平视镜头。构图为稳定的居中构图。</div>
+        <div class="dim-block-footer">
+          <button class="dim-copy-btn" style="--dim-color:var(--c-camera)" onclick="copyDim(this,'merged-camera')">📋 复制</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 氛围 -->
+    <div class="dim-block open" style="--dim-color:var(--c-atmo)" id="block-atmosphere">
+      <div class="dim-block-header" onclick="toggleBlock('block-atmosphere')">
+        <div class="dim-block-color"></div>
+        <div class="dim-block-title">
+          <span style="font-size:18px">✨</span>
+          <span class="dim-block-name">氛围</span>
+          <span class="dim-block-count">1 段</span>
+        </div>
+        <span class="dim-block-arrow">▼</span>
+      </div>
+      <div class="dim-block-body">
+        <div class="merged-text" id="merged-atmosphere">光线主要来自月亮、篝火和提灯等多个光源，共同照亮了中心区域，形成了明暗对比，营造出一种宁静、温馨且梦幻的氛围。</div>
+        <div class="dim-block-footer">
+          <button class="dim-copy-btn" style="--dim-color:var(--c-atmo)" onclick="copyDim(this,'merged-atmosphere')">📋 复制</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 视觉风格 -->
+    <div class="dim-block open" style="--dim-color:var(--c-style)" id="block-style">
+      <div class="dim-block-header" onclick="toggleBlock('block-style')">
+        <div class="dim-block-color"></div>
+        <div class="dim-block-title">
+          <span style="font-size:18px">🎨</span>
+          <span class="dim-block-name">视觉风格</span>
+          <span class="dim-block-count">2 段</span>
+        </div>
+        <span class="dim-block-arrow">▼</span>
+      </div>
+      <div class="dim-block-body">
+        <div class="merged-text" id="merged-style">色彩上运用了大量的紫色调，属于冷暖对比色调。具有柔和光影和细腻质感的可爱三维卡通渲染风格。</div>
+        <div class="dim-block-footer">
+          <button class="dim-copy-btn" style="--dim-color:var(--c-style)" onclick="copyDim(this,'merged-style')">📋 复制</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end merged-section -->
+
+  <div class="footer">Caption 多维度拆解工具 · 原文顺序切分 + 维度合并展示</div>
+</div>
+
+<!-- 右侧固定维度列表 -->
+<div class="side-legend">
+  <div class="side-item" style="--side-color:var(--c-scene)"    onclick="toggleDimSide('scene',this)">
+    <span class="side-dot"></span>场景
+  </div>
+  <div class="side-item" style="--side-color:var(--c-subject)"  onclick="toggleDimSide('subject',this)">
+    <span class="side-dot"></span>主体
+  </div>
+  <div class="side-item" style="--side-color:var(--c-motion)"   onclick="toggleDimSide('motion',this)">
+    <span class="side-dot"></span>运动
+  </div>
+  <div class="side-item" style="--side-color:var(--c-text)"     onclick="toggleDimSide('textlabel',this)">
+    <span class="side-dot"></span>文本版式
+  </div>
+  <div class="side-item" style="--side-color:var(--c-camera)"   onclick="toggleDimSide('camera',this)">
+    <span class="side-dot"></span>镜头语言
+  </div>
+  <div class="side-item" style="--side-color:var(--c-atmo)"     onclick="toggleDimSide('atmosphere',this)">
+    <span class="side-dot"></span>氛围
+  </div>
+  <div class="side-item" style="--side-color:var(--c-style)"    onclick="toggleDimSide('style',this)">
+    <span class="side-dot"></span>视觉风格
+  </div>
+  <div class="side-item" style="--side-color:var(--c-temporal)" onclick="toggleDimSide('temporal',this)">
+    <span class="side-dot"></span>时序变化
+  </div>
+</div>
+
+<script>
+  // 已隐藏的维度集合
+  const hiddenDims = new Set();
+
+  // 顶部图例点击
+  function toggleDim(dim, el) {
+    _toggle(dim);
+    el.classList.toggle('hidden-dim', hiddenDims.has(dim));
+    // 同步右侧
+    document.querySelectorAll('.side-item').forEach(s => {
+      const fn = s.getAttribute('onclick');
+      if (fn && fn.includes(`'${dim}'`)) {
+        s.classList.toggle('hidden-dim', hiddenDims.has(dim));
+      }
+    });
+  }
+
+  // 右侧列表点击
+  function toggleDimSide(dim, el) {
+    _toggle(dim);
+    el.classList.toggle('hidden-dim', hiddenDims.has(dim));
+    // 同步顶部
+    document.querySelectorAll('.legend-item').forEach(l => {
+      const fn = l.getAttribute('onclick');
+      if (fn && fn.includes(`'${dim}'`)) {
+        l.classList.toggle('hidden-dim', hiddenDims.has(dim));
+      }
+    });
+  }
+
+  function _toggle(dim) {
+    if (hiddenDims.has(dim)) {
+      hiddenDims.delete(dim);
+    } else {
+      hiddenDims.add(dim);
+    }
+    // 更新片段显示
+    document.querySelectorAll(`.seg[data-dim="${dim}"]`).forEach(seg => {
+      seg.classList.toggle('dim-hidden', hiddenDims.has(dim));
+    });
+    // 同步合并块的淡出
+    const block = document.getElementById('block-' + dim);
+    if (block) block.style.opacity = hiddenDims.has(dim) ? '0.35' : '1';
+  }
+
+  // 展开/折叠合并块
+  function toggleBlock(id) {
+    const el = document.getElementById(id);
+    el.classList.toggle('open');
+  }
+
+  // 复制单个维度合并文本
+  function copyDim(btn, id) {
+    const el = document.getElementById(id);
+    const text = el.textContent.trim();
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = '✓ 已复制';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.innerHTML = '📋 复制'; btn.classList.remove('copied'); }, 2000);
+    }).catch(() => {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      btn.textContent = '✓ 已复制';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.innerHTML = '📋 复制'; btn.classList.remove('copied'); }, 2000);
+    });
+  }
+
+  // 复制原文
+  function copyAll() {
+    const text = `这是一幅描绘两个卡通角色在野外露营的竖版画面。主体位于一片广阔的紫色草地中央，草地上散落着一些发光的小光点。一个绿色的圆顶帐篷搭建在此，帐篷门帘向两侧拉开，露出内部铺着米色床垫的休息区，上面放着一个粉色枕头，还有一个黄色的方形小灯笼，灯笼上有三个五角星形状的镂空图案，并发出温暖的黄光。帐篷外，一只白色的兔子坐在左侧，它有着长长的耳朵，黑色的眼睛，头上戴着一顶小小的金色皇冠，右手拿着一颗黄色的五角星。它的右边是一个矮胖的白色生物，头顶上放着一个橙色的小南瓜，双手捧着一块棕色的食物正在啃食。两者之间是一堆燃烧正旺的篝火，火焰呈红色和橙色，周围环绕着一圈灰色石头。兔子旁边有一个矮小的树桩充当凳子。帐篷左边立着一根细长的木杆，顶端悬挂着一盏复古造型的玻璃提灯，同样散发着光芒。背景部分，近处是起伏的深色山丘轮廓，更远处则是从地平线附近的暖橙色向上过渡到顶部的深蓝紫色渐变夜空，天空中散布着明亮的星星。一轮巨大而耀眼的黄色新月悬挂在山丘之上，其下半部分被山丘遮挡。画面右下角有一组白色的文字标识：上方是一个白底黑字的圆角矩形图标，里面写着"小红书"；紧接着下方是一行较小的白色文字，内容为"小红书号: 108702984"。该画面为中景平视镜头，光线主要来自月亮、篝火和提灯等多个光源，共同照亮了中心区域，形成了明暗对比，营造出一种宁静、温馨且梦幻的氛围。色彩上运用了大量的紫色调，属于冷暖对比色调。构图为稳定的居中构图。具有柔和光影和细腻质感的可爱三维卡通渲染风格。`;
+    const btn = document.getElementById('copyBtn');
+    navigator.clipboard.writeText(text).then(() => {
+      btn.innerHTML = '✓ 已复制';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.innerHTML = '📋 复制完整原文'; btn.classList.remove('copied'); }, 2200);
+    }).catch(() => {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      btn.innerHTML = '✓ 已复制';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.innerHTML = '📋 复制完整原文'; btn.classList.remove('copied'); }, 2200);
+    });
+  }
+</script>
+</body>
+</html>
