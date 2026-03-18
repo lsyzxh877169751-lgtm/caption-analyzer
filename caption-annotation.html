@@ -552,7 +552,7 @@ function makeCard(imgId,cat,p){
   return card;
 }
 
-function esc(s){ return s.replace(/\/g,'\\').replace(/'/g,"\'").replace(/"/g,'\"'); }
+function esc(s){ return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"'); }
 function eh(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 function setLabel(imgId,cat,pt,val,btn){
