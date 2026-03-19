@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>信噪比统计工具</title>
+<style>
+  :root {
+    --primary: #4f6ef7;
+    --primary-hover: #3a57e8;
+    --danger: #e53e3e;
+    --danger-bg: #fff5f5;
+    --warn-bg: #fff3cd;
+    --surface: #ffffff;
+    --bg: #f0f2f7;
+    --border: #dde1ea;
+    --text: #1a202c;
+    --text-muted: #718096;
+    --radius: 10px;
+    --shadow: 0 2px 12px rgba(0,0,0,0.08);
+    --red-cell-bg: #ffe5e5;
+    --red-cell-color: #c53030;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 18px 32px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  }
+  header h1 {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  header .subtitle {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-left: 4px;
+  }
+
+  .main { max-width: 1200px; margin: 0 auto; padding: 28px 24px; display: flex; flex-direction: column; gap: 20px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    box-shadow: var(--shadow);
+  }
+  .card-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Upload Zone */
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 36px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    background: #fafbff;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--primary);
+    background: #f0f4ff;
+  }
+  .drop-zone .icon { font-size: 36px; margin-bottom: 10px; }
+  .drop-zone .hint { font-size: 14px; color: var(--text-muted); }
+  .drop-zone .hint strong { color: var(--primary); }
+
+  #file-input { display: none; }
+
+  /* File List */
+  .file-list { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+  .file-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #f7f9fc;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+  }
+  .file-icon { font-size: 18px; flex-shrink: 0; }
+  .file-orig-name { font-size: 12px; color: var(--text-muted); min-width: 0; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
+  .file-label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+  .file-name-input {
+    flex: 1;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 13px;
+    background: white;
+    min-width: 80px;
+    color: var(--text);
+    transition: border-color 0.2s;
+  }
+  .file-name-input:focus { outline: none; border-color: var(--primary); }
+  .btn-remove {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 16px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    transition: color 0.15s, background 0.15s;
+  }
+  .btn-remove:hover { color: var(--danger); background: var(--danger-bg); }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 20px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: background 0.15s, opacity 0.15s;
+  }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-secondary { background: #e8ecf5; color: var(--text); }
+  .btn-secondary:hover { background: #d8dff0; }
+
+  .action-row { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+
+  /* Status */
+  #status-card { display: none; }
+  .status-inner { display: flex; align-items: center; gap: 14px; }
+  .spinner {
+    width: 22px; height: 22px;
+    border: 3px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #status-text { font-size: 14px; color: var(--text-muted); }
+
+  /* Results */
+  #result-card { display: none; }
+  .result-actions { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--border); margin-bottom: 20px; }
+  .tab-btn {
+    padding: 8px 18px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    border-radius: 6px 6px 0 0;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Table */
+  .table-wrap {
+    overflow: auto;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    max-height: 520px;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 13px;
+  }
+  thead tr { background: #f4f6fb; }
+  th {
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-muted);
+    font-size: 12px;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    background: #f4f6fb;
+    border-bottom: 1px solid var(--border);
+    z-index: 1;
+  }
+  td {
+    padding: 8px 14px;
+    border-bottom: 1px solid #f0f2f7;
+    white-space: nowrap;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f8f9fd; }
+  td.model-cell { font-weight: 600; color: var(--primary); }
+  td.num { font-variant-numeric: tabular-nums; }
+
+  .cell-red { background: var(--red-cell-bg) !important; color: var(--red-cell-color) !important; font-weight: 600; }
+
+  .empty-hint {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+
+  .error-msg {
+    background: var(--danger-bg);
+    border: 1px solid #fc8181;
+    color: var(--danger);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 13px;
+    margin-top: 8px;
+  }
+
+  .count-badge {
+    background: var(--primary);
+    color: white;
+    border-radius: 20px;
+    font-size: 11px;
+    padding: 1px 7px;
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>信噪比统计工具</h1>
+  <span class="subtitle">SNR Statistics / 支持 JSON & CSV 多文件批量分析</span>
+</header>
+
+<div class="main">
+
+  <!-- Upload Card -->
+  <div class="card" id="upload-card">
+    <div class="card-title">
+      <span>上传数据文件</span>
+    </div>
+    <div class="drop-zone" id="drop-zone">
+      <div class="icon">&#128196;</div>
+      <div class="hint">拖拽文件到此处，或 <strong>点击选择文件</strong></div>
+      <div class="hint" style="margin-top:6px;font-size:12px;">支持 .json / .csv，可同时选择多个文件</div>
+    </div>
+    <input type="file" id="file-input" multiple accept=".json,.csv">
+    <div class="file-list" id="file-list"></div>
+    <div id="upload-error"></div>
+    <div class="action-row">
+      <button class="btn btn-primary" id="btn-compute" disabled>&#9654; 开始统计</button>
+      <button class="btn btn-secondary" id="btn-clear">清空文件</button>
+      <span id="file-count-badge" style="display:none;" class="count-badge">0 个文件</span>
+    </div>
+  </div>
+
+  <!-- Status Card -->
+  <div class="card" id="status-card">
+    <div class="status-inner">
+      <div class="spinner" id="spinner"></div>
+      <span id="status-text">正在处理...</span>
+    </div>
+  </div>
+
+  <!-- Result Card -->
+  <div class="card" id="result-card">
+    <div class="card-title">
+      <span>统计结果</span>
+    </div>
+    <div class="result-actions">
+      <button class="btn btn-primary" id="btn-download">&#8659; 下载 CSV</button>
+    </div>
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="summary">总结</button>
+      <button class="tab-btn" data-tab="level1">一级类目</button>
+      <button class="tab-btn" data-tab="level2">二级类目</button>
+    </div>
+    <div class="tab-panel active" id="tab-summary">
+      <div class="table-wrap"><table id="tbl-summary"><thead></thead><tbody></tbody></table></div>
+    </div>
+    <div class="tab-panel" id="tab-level1">
+      <div class="table-wrap"><table id="tbl-level1"><thead></thead><tbody></tbody></table></div>
+    </div>
+    <div class="tab-panel" id="tab-level2">
+      <div class="table-wrap"><table id="tbl-level2"><thead></thead><tbody></tbody></table></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  let uploadedFiles = []; // { file, name }
+  let lastResults = null; // { datasets: [{ name, stats }] }
+
+  // ── DOM ────────────────────────────────────────────────────────────────────
+  const dropZone     = document.getElementById('drop-zone');
+  const fileInput    = document.getElementById('file-input');
+  const fileList     = document.getElementById('file-list');
+  const btnCompute   = document.getElementById('btn-compute');
+  const btnClear     = document.getElementById('btn-clear');
+  const btnDownload  = document.getElementById('btn-download');
+  const uploadError  = document.getElementById('upload-error');
+  const statusCard   = document.getElementById('status-card');
+  const statusText   = document.getElementById('status-text');
+  const resultCard   = document.getElementById('result-card');
+  const fileCountBadge = document.getElementById('file-count-badge');
+
+  // ── Upload Interactions ────────────────────────────────────────────────────
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    addFiles(Array.from(e.dataTransfer.files));
+  });
+  fileInput.addEventListener('change', () => {
+    addFiles(Array.from(fileInput.files));
+    fileInput.value = '';
+  });
+  btnClear.addEventListener('click', () => {
+    uploadedFiles = [];
+    renderFileList();
+  });
+  btnCompute.addEventListener('click', runCompute);
+  btnDownload.addEventListener('click', downloadAll);
+
+  // Tab switching
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    });
+  });
+
+  function addFiles(files) {
+    uploadError.innerHTML = '';
+    const bad = [];
+    files.forEach(f => {
+      if (!/\.(json|csv)$/i.test(f.name)) { bad.push(f.name); return; }
+      uploadedFiles.push({ file: f, name: f.name.replace(/\.[^.]+$/, '') });
+    });
+    if (bad.length) {
+      uploadError.innerHTML = '<div class="error-msg">以下文件类型不支持，已跳过：' + bad.map(escHtml).join(', ') + '</div>';
+    }
+    renderFileList();
+  }
+
+  function renderFileList() {
+    fileList.innerHTML = '';
+    uploadedFiles.forEach((item, idx) => {
+      const ext = item.file.name.split('.').pop().toUpperCase();
+      const div = document.createElement('div');
+      div.className = 'file-item';
+      div.innerHTML =
+        '<span class="file-icon">' + (ext === 'JSON' ? '&#x1F4C4;' : '&#x1F4CA;') + '</span>' +
+        '<span class="file-orig-name" title="' + escHtml(item.file.name) + '">' + escHtml(item.file.name) + '</span>' +
+        '<span class="file-label">数据集名称：</span>' +
+        '<input class="file-name-input" type="text" value="' + escHtml(item.name) + '" data-idx="' + idx + '" />' +
+        '<button class="btn-remove" data-idx="' + idx + '" title="移除">&#10005;</button>';
+      fileList.appendChild(div);
+    });
+
+    fileList.querySelectorAll('.file-name-input').forEach(input => {
+      input.addEventListener('input', () => {
+        uploadedFiles[+input.dataset.idx].name = input.value;
+      });
+    });
+    fileList.querySelectorAll('.btn-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        uploadedFiles.splice(+btn.dataset.idx, 1);
+        renderFileList();
+      });
+    });
+
+    btnCompute.disabled = uploadedFiles.length === 0;
+    if (uploadedFiles.length > 0) {
+      fileCountBadge.textContent = uploadedFiles.length + ' 个文件';
+      fileCountBadge.style.display = 'inline-block';
+    } else {
+      fileCountBadge.style.display = 'none';
+    }
+  }
+
+  // ── CSV Parser ─────────────────────────────────────────────────────────────
+  function parseCSVText(text) {
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+    const allRows = [];
+    var fields = [], cur = "", inQuote = false;
+    for (var i = 0; i <= text.length; i++) {
+      var ch = i < text.length ? text[i] : '\n';
+      if (inQuote) {
+        if (ch === '"') {
+          if (text[i + 1] === '"') { cur += '"'; i++; }
+          else inQuote = false;
+        } else { cur += ch; }
+      } else {
+        if (ch === '"') { inQuote = true; }
+        else if (ch === ',') { fields.push(cur); cur = ""; }
+        else if (ch === '\n' || ch === '\r') {
+          fields.push(cur); cur = "";
+          if (ch === '\r' && text[i + 1] === '\n') i++;
+          if (fields.some(function(f) { return f.length > 0; })) allRows.push(fields);
+          fields = [];
+        } else { cur += ch; }
+      }
+    }
+    if (allRows.length === 0) return { headers: [], rows: [] };
+    var headers = allRows[0];
+    var rows = [];
+    for (var r = 1; r < allRows.length; r++) {
+      var rowFields = allRows[r];
+      var obj = {};
+      headers.forEach(function(h, hi) { obj[h] = rowFields[hi] !== undefined ? rowFields[hi] : ''; });
+      rows.push(obj);
+    }
+    return { headers: headers, rows: rows };
+  }
+
+  // ── Value Extractors ───────────────────────────────────────────────────────
+  function extractValueFromJsonEntry(entry) {
+    var apiResult = (entry && entry.api_result != null) ? entry.api_result : {};
+    if (apiResult.code !== 200) return null;
+    var data = apiResult.data != null ? apiResult.data : [];
+    if (!data.length) return null;
+    var accuracy = (data[0] && data[0].zj_img_caption_accuracy_v2 != null) ? data[0].zj_img_caption_accuracy_v2 : {};
+    if (accuracy.code !== 200) return null;
+    return accuracy.value != null ? accuracy.value : null;
+  }
+
+  function extractValueFromRawData(rawDataStr) {
+    if (!rawDataStr || !rawDataStr.trim()) return null;
+    try {
+      var raw = JSON.parse(rawDataStr);
+      if (raw.code !== 200) return null;
+      var dataList = raw.data != null ? raw.data : [];
+      if (!dataList.length) return null;
+      var zj = (dataList[0] && dataList[0].zj_img_caption_accuracy_v2 != null) ? dataList[0].zj_img_caption_accuracy_v2 : {};
+      if (zj.code !== 200) return null;
+      return zj.value != null ? zj.value : null;
+    } catch (e) { return null; }
+  }
+
+  // ── Compute Stats ──────────────────────────────────────────────────────────
+  function computeStats(values) {
+    var overall = { total: 0, error: 0 };
+    var level1 = {};
+    var level2 = {};
+    var perImageRates = [];
+    var perImageLv1Rates = {};
+    var perImageLv2Rates = {};
+
+    for (var vi = 0; vi < values.length; vi++) {
+      var value = values[vi];
+      var detailList = value.detail_list != null ? value.detail_list : [];
+      var imgTotal = 0, imgError = 0;
+      var imgLv1 = {}, imgLv2 = {};
+
+      for (var di = 0; di < detailList.length; di++) {
+        var detail = detailList[di];
+        var qaResults = detail.qa_results != null ? detail.qa_results : [];
+        for (var qi = 0; qi < qaResults.length; qi++) {
+          var qa = qaResults[qi];
+          var category = (qa.category != null ? qa.category : '').trim();
+          var conclusion = (qa.conclusion != null ? qa.conclusion : '').trim().toLowerCase();
+          if (!category) continue;
+
+          imgTotal++;
+          overall.total++;
+          var isError = conclusion === 'false';
+          if (isError) { imgError++; overall.error++; }
+
+          var parts = category.split('-');
+          var cat1 = parts[0];
+          var cat2 = category;
+
+          if (!level1[cat1]) level1[cat1] = { total: 0, error: 0 };
+          if (!level2[cat2]) level2[cat2] = { total: 0, error: 0 };
+          if (!imgLv1[cat1]) imgLv1[cat1] = { total: 0, error: 0 };
+          if (!imgLv2[cat2]) imgLv2[cat2] = { total: 0, error: 0 };
+
+          level1[cat1].total++; level2[cat2].total++;
+          imgLv1[cat1].total++; imgLv2[cat2].total++;
+          if (isError) {
+            level1[cat1].error++; level2[cat2].error++;
+            imgLv1[cat1].error++; imgLv2[cat2].error++;
+          }
+        }
+      }
+
+      if (imgTotal > 0) perImageRates.push(imgError / imgTotal);
+      var lv1Keys = Object.keys(imgLv1);
+      for (var li = 0; li < lv1Keys.length; li++) {
+        var lcat1 = lv1Keys[li];
+        var ls = imgLv1[lcat1];
+        if (ls.total > 0) {
+          if (!perImageLv1Rates[lcat1]) perImageLv1Rates[lcat1] = [];
+          perImageLv1Rates[lcat1].push(ls.error / ls.total);
+        }
+      }
+      var lv2Keys = Object.keys(imgLv2);
+      for (var l2i = 0; l2i < lv2Keys.length; l2i++) {
+        var lcat2 = lv2Keys[l2i];
+        var ls2 = imgLv2[lcat2];
+        if (ls2.total > 0) {
+          if (!perImageLv2Rates[lcat2]) perImageLv2Rates[lcat2] = [];
+          perImageLv2Rates[lcat2].push(ls2.error / ls2.total);
+        }
+      }
+    }
+
+    if (perImageRates.length) {
+      var sum = 0;
+      for (var ri = 0; ri < perImageRates.length; ri++) sum += perImageRates[ri];
+      overall.avgErrorRate = +((sum / perImageRates.length).toFixed(4));
+    } else {
+      overall.avgErrorRate = 0;
+    }
+
+    var lv1Dict = {};
+    var l1Keys = Object.keys(level1);
+    for (var k1 = 0; k1 < l1Keys.length; k1++) {
+      var cat = l1Keys[k1];
+      var s = level1[cat];
+      var rates = perImageLv1Rates[cat] != null ? perImageLv1Rates[cat] : [];
+      var avg = 0;
+      if (rates.length) {
+        var rsum = 0;
+        for (var ri2 = 0; ri2 < rates.length; ri2++) rsum += rates[ri2];
+        avg = +((rsum / rates.length).toFixed(4));
+      }
+      lv1Dict[cat] = { total: s.total, error: s.error, avgErrorRate: avg };
+    }
+
+    var lv2Dict = {};
+    var l2Keys = Object.keys(level2);
+    for (var k2 = 0; k2 < l2Keys.length; k2++) {
+      var cat2 = l2Keys[k2];
+      var s2 = level2[cat2];
+      var rates2 = perImageLv2Rates[cat2] != null ? perImageLv2Rates[cat2] : [];
+      var avg2 = 0;
+      if (rates2.length) {
+        var rsum2 = 0;
+        for (var ri3 = 0; ri3 < rates2.length; ri3++) rsum2 += rates2[ri3];
+        avg2 = +((rsum2 / rates2.length).toFixed(4));
+      }
+      lv2Dict[cat2] = { total: s2.total, error: s2.error, avgErrorRate: avg2 };
+    }
+
+    return { overall: overall, level1: lv1Dict, level2: lv2Dict };
+  }
+
+  // ── File Reading ───────────────────────────────────────────────────────────
+  function readFileAsText(file) {
+    return new Promise(function(resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function(e) { resolve(e.target.result); };
+      reader.onerror = function() { reject(new Error('读取文件失败: ' + file.name)); };
+      reader.readAsText(file, 'utf-8');
+    });
+  }
+
+  async function processFile(item) {
+    var file = item.file;
+    var name = item.name || file.name.replace(/\.[^.]+$/, '');
+    var text = await readFileAsText(file);
+    var values = [];
+
+    if (/\.json$/i.test(file.name)) {
+      var arr;
+      try { arr = JSON.parse(text); }
+      catch (e) { throw new Error('JSON 解析失败 (' + file.name + '): ' + e.message); }
+      if (!Array.isArray(arr)) throw new Error('JSON 文件应为数组格式: ' + file.name);
+      arr.forEach(function(entry) {
+        var v = extractValueFromJsonEntry(entry);
+        if (v != null) values.push(v);
+      });
+    } else if (/\.csv$/i.test(file.name)) {
+      var parsed = parseCSVText(text);
+      var headers = parsed.headers;
+      var urlColName = null, rawColName = null;
+      headers.forEach(function(h) {
+        if (h === 'input.url_cos') urlColName = h;
+        if (h === 'output.raw_data') rawColName = h;
+      });
+      if (!rawColName) throw new Error('CSV 文件缺少 "output.raw_data" 列: ' + file.name);
+
+      var seen = {};
+      parsed.rows.forEach(function(row) {
+        if (urlColName) {
+          var urlVal = row[urlColName] || '';
+          if (urlVal && seen[urlVal]) return;
+          if (urlVal) seen[urlVal] = true;
+        }
+        var v = extractValueFromRawData(row[rawColName]);
+        if (v != null) values.push(v);
+      });
+    } else {
+      throw new Error('不支持的文件类型: ' + file.name);
+    }
+
+    return { name: name, stats: computeStats(values), valueCount: values.length };
+  }
+
+  // ── Main Compute ───────────────────────────────────────────────────────────
+  async function runCompute() {
+    if (!uploadedFiles.length) return;
+    uploadError.innerHTML = '';
+    statusCard.style.display = 'block';
+    resultCard.style.display = 'none';
+    btnCompute.disabled = true;
+    statusText.textContent = '正在处理...';
+
+    try {
+      var datasets = [];
+      for (var i = 0; i < uploadedFiles.length; i++) {
+        statusText.textContent = '处理文件 ' + (i + 1) + ' / ' + uploadedFiles.length + '：' + uploadedFiles[i].file.name;
+        var result = await processFile(uploadedFiles[i]);
+        datasets.push(result);
+      }
+      lastResults = { datasets: datasets };
+      renderResults(datasets);
+      statusCard.style.display = 'none';
+      resultCard.style.display = 'block';
+    } catch (e) {
+      statusCard.style.display = 'none';
+      uploadError.innerHTML = '<div class="error-msg">错误：' + escHtml(e.message) + '</div>';
+    } finally {
+      btnCompute.disabled = uploadedFiles.length === 0;
+    }
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  function fmtRate(v) { return (v * 100).toFixed(2) + '%'; }
+  function fmtSNR(v) { return ((1 - v) * 100).toFixed(2) + '%'; }
+
+  function renderResults(datasets) {
+    renderSummary(datasets);
+    renderLevel1(datasets);
+    renderLevel2(datasets);
+  }
+
+  function renderSummary(datasets) {
+    var tbl = document.getElementById('tbl-summary');
+    var thead = tbl.querySelector('thead');
+    var tbody = tbl.querySelector('tbody');
+    thead.innerHTML = '<tr>' +
+      '<th>模型</th><th>总点数</th><th>错误数</th>' +
+      '<th>加权错误率</th><th>加权 SNR</th>' +
+      '<th>算术平均错误率</th><th>算术平均 SNR</th>' +
+      '</tr>';
+    tbody.innerHTML = '';
+
+    var rows = datasets.map(function(ds) {
+      var o = ds.stats.overall;
+      var wRate = o.total > 0 ? o.error / o.total : 0;
+      return { name: ds.name, total: o.total, error: o.error, wRate: wRate, avgRate: o.avgErrorRate };
+    });
+    rows.sort(function(a, b) { return b.wRate - a.wRate; });
+
+    rows.forEach(function(r) {
+      var tr = document.createElement('tr');
+      var wSnr = 1 - r.wRate;
+      var aSnr = 1 - r.avgRate;
+      tr.innerHTML =
+        '<td class="model-cell">' + escHtml(r.name) + '</td>' +
+        '<td class="num">' + r.total + '</td>' +
+        '<td class="num">' + r.error + '</td>' +
+        tdRate(r.wRate) +
+        tdSNR(wSnr) +
+        tdRate(r.avgRate) +
+        tdSNR(aSnr);
+      tbody.appendChild(tr);
+    });
+    if (!rows.length) tbody.innerHTML = '<tr><td colspan="7" class="empty-hint">暂无数据</td></tr>';
+  }
+
+  function renderLevel1(datasets) {
+    var tbl = document.getElementById('tbl-level1');
+    var thead = tbl.querySelector('thead');
+    var tbody = tbl.querySelector('tbody');
+    thead.innerHTML = '<tr><th>模型</th><th>一级类目</th><th>总点数</th><th>错误数</th><th>错误率</th><th>SNR</th></tr>';
+    tbody.innerHTML = '';
+
+    datasets.forEach(function(ds) {
+      var lv1 = ds.stats.level1;
+      var cats = Object.keys(lv1);
+      cats.sort(function(a, b) {
+        var ra = lv1[a].total > 0 ? lv1[a].error / lv1[a].total : 0;
+        var rb = lv1[b].total > 0 ? lv1[b].error / lv1[b].total : 0;
+        return rb - ra;
+      });
+      cats.forEach(function(cat, ci) {
+        var s = lv1[cat];
+        var rate = s.total > 0 ? s.error / s.total : 0;
+        var snr = 1 - rate;
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          (ci === 0 ? '<td class="model-cell" rowspan="' + cats.length + '">' + escHtml(ds.name) + '</td>' : '') +
+          '<td>' + escHtml(cat) + '</td>' +
+          '<td class="num">' + s.total + '</td>' +
+          '<td class="num">' + s.error + '</td>' +
+          tdRate(rate) +
+          tdSNR(snr);
+        tbody.appendChild(tr);
+      });
+    });
+    if (!datasets.length) tbody.innerHTML = '<tr><td colspan="6" class="empty-hint">暂无数据</td></tr>';
+  }
+
+  function renderLevel2(datasets) {
+    var tbl = document.getElementById('tbl-level2');
+    var thead = tbl.querySelector('thead');
+    var tbody = tbl.querySelector('tbody');
+    thead.innerHTML = '<tr><th>模型</th><th>一级类目</th><th>二级类目</th><th>总点数</th><th>错误数</th><th>错误率</th><th>SNR</th></tr>';
+    tbody.innerHTML = '';
+
+    datasets.forEach(function(ds) {
+      var lv2 = ds.stats.level2;
+      var cats = Object.keys(lv2);
+      cats.sort(function(a, b) {
+        var ra = lv2[a].total > 0 ? lv2[a].error / lv2[a].total : 0;
+        var rb = lv2[b].total > 0 ? lv2[b].error / lv2[b].total : 0;
+        return rb - ra;
+      });
+      cats.forEach(function(cat, ci) {
+        var s = lv2[cat];
+        var rate = s.total > 0 ? s.error / s.total : 0;
+        var snr = 1 - rate;
+        var cat1 = cat.split('-')[0];
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          (ci === 0 ? '<td class="model-cell" rowspan="' + cats.length + '">' + escHtml(ds.name) + '</td>' : '') +
+          '<td>' + escHtml(cat1) + '</td>' +
+          '<td>' + escHtml(cat) + '</td>' +
+          '<td class="num">' + s.total + '</td>' +
+          '<td class="num">' + s.error + '</td>' +
+          tdRate(rate) +
+          tdSNR(snr);
+        tbody.appendChild(tr);
+      });
+    });
+    if (!datasets.length) tbody.innerHTML = '<tr><td colspan="7" class="empty-hint">暂无数据</td></tr>';
+  }
+
+  function tdRate(v) {
+    var cls = v > 0.1 ? ' class="num cell-red"' : ' class="num"';
+    return '<td' + cls + '>' + fmtRate(v) + '</td>';
+  }
+  function tdSNR(v) {
+    var cls = v < 0.9 ? ' class="num cell-red"' : ' class="num"';
+    return '<td' + cls + '>' + (v * 100).toFixed(2) + '%' + '</td>';
+  }
+
+  // ── Download CSV ───────────────────────────────────────────────────────────
+  function downloadAll() {
+    if (!lastResults) return;
+    var datasets = lastResults.datasets;
+
+    // Summary CSV
+    var summaryLines = ['\uFEFF模型,总点数,错误数,加权错误率,加权SNR,算术平均错误率,算术平均SNR'];
+    var summaryRows = datasets.map(function(ds) {
+      var o = ds.stats.overall;
+      var wRate = o.total > 0 ? o.error / o.total : 0;
+      return { name: ds.name, total: o.total, error: o.error, wRate: wRate, avgRate: o.avgErrorRate };
+    });
+    summaryRows.sort(function(a, b) { return b.wRate - a.wRate; });
+    summaryRows.forEach(function(r) {
+      summaryLines.push([
+        csvEsc(r.name), r.total, r.error,
+        (r.wRate * 100).toFixed(2) + '%',
+        ((1 - r.wRate) * 100).toFixed(2) + '%',
+        (r.avgRate * 100).toFixed(2) + '%',
+        ((1 - r.avgRate) * 100).toFixed(2) + '%'
+      ].join(','));
+    });
+    downloadCSV('stat_summary.csv', summaryLines.join('\r\n'));
+
+    // Level1 CSV
+    var lv1Lines = ['\uFEFF模型,一级类目,总点数,错误数,错误率,SNR'];
+    datasets.forEach(function(ds) {
+      var lv1 = ds.stats.level1;
+      var cats = Object.keys(lv1);
+      cats.sort(function(a, b) {
+        var ra = lv1[a].total > 0 ? lv1[a].error / lv1[a].total : 0;
+        var rb = lv1[b].total > 0 ? lv1[b].error / lv1[b].total : 0;
+        return rb - ra;
+      });
+      cats.forEach(function(cat) {
+        var s = lv1[cat];
+        var rate = s.total > 0 ? s.error / s.total : 0;
+        lv1Lines.push([csvEsc(ds.name), csvEsc(cat), s.total, s.error, (rate * 100).toFixed(2) + '%', ((1 - rate) * 100).toFixed(2) + '%'].join(','));
+      });
+    });
+    downloadCSV('stat_level1.csv', lv1Lines.join('\r\n'));
+
+    // Level2 CSV
+    var lv2Lines = ['\uFEFF模型,一级类目,二级类目,总点数,错误数,错误率,SNR'];
+    datasets.forEach(function(ds) {
+      var lv2 = ds.stats.level2;
+      var cats = Object.keys(lv2);
+      cats.sort(function(a, b) {
+        var ra = lv2[a].total > 0 ? lv2[a].error / lv2[a].total : 0;
+        var rb = lv2[b].total > 0 ? lv2[b].error / lv2[b].total : 0;
+        return rb - ra;
+      });
+      cats.forEach(function(cat) {
+        var s = lv2[cat];
+        var rate = s.total > 0 ? s.error / s.total : 0;
+        var cat1 = cat.split('-')[0];
+        lv2Lines.push([csvEsc(ds.name), csvEsc(cat1), csvEsc(cat), s.total, s.error, (rate * 100).toFixed(2) + '%', ((1 - rate) * 100).toFixed(2) + '%'].join(','));
+      });
+    });
+    downloadCSV('stat_level2.csv', lv2Lines.join('\r\n'));
+  }
+
+  function downloadCSV(filename, content) {
+    var blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function csvEsc(v) {
+    var s = String(v == null ? '' : v);
+    if (s.indexOf(',') >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
+
+  function escHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+})();
+</script>
+</body>
+</html>

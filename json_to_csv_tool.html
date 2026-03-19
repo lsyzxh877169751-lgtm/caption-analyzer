@@ -1,0 +1,1404 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>标注评估数据处理工具</title>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <style>
+    :root {
+      --primary: #4A90E2;
+      --success: #52C41A;
+      --warning: #FAAD14;
+      --danger: #FF4D4F;
+      --border: #E8E8E8;
+      --bg-light: #F5F7FA;
+      --bg-error: rgba(255, 77, 79, 0.05);
+      --text: #333;
+      --text-light: #666;
+      --radius: 8px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+      color: var(--text);
+      background: var(--bg-light);
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    /* ---- Header ---- */
+    header {
+      margin-bottom: 24px;
+    }
+    header h1 {
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    header p {
+      margin-top: 4px;
+      font-size: 14px;
+      color: var(--text-light);
+    }
+
+    /* ---- Card ---- */
+    .card {
+      background: white;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      padding: 24px;
+      margin-bottom: 16px;
+    }
+
+    /* ---- Upload Zone ---- */
+    #drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 48px 40px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      user-select: none;
+    }
+    #drop-zone:hover,
+    #drop-zone.drag-over {
+      border-color: var(--primary);
+      background: rgba(74, 144, 226, 0.04);
+    }
+    #drop-zone .upload-icon {
+      font-size: 40px;
+      margin-bottom: 12px;
+      color: #ccc;
+    }
+    #drop-zone .upload-main {
+      font-size: 15px;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    #drop-zone .upload-main .upload-link {
+      color: var(--primary);
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    #drop-zone .upload-hint {
+      font-size: 13px;
+      color: var(--text-light);
+    }
+    #file-input { display: none; }
+
+    /* ---- Status Bar ---- */
+    #status-section { display: none; }
+    #status-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      color: var(--text);
+    }
+    #progress-spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+    #progress-spinner.hidden { display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #warning-panel {
+      display: none;
+      margin-top: 12px;
+      background: #FFF7E6;
+      border: 1px solid #FFD591;
+      border-radius: var(--radius);
+      padding: 12px 16px;
+    }
+    #warning-panel h4 {
+      font-size: 13px;
+      color: #AD6800;
+      margin-bottom: 6px;
+    }
+    #warning-list {
+      list-style: disc inside;
+      font-size: 13px;
+      color: #874D00;
+    }
+    #warning-list li { margin-top: 4px; }
+
+    /* ---- Result Section ---- */
+    #result-section { display: none; }
+    #result-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    #result-stats {
+      font-size: 14px;
+      color: var(--text-light);
+    }
+    #result-stats strong { color: var(--text); }
+
+    #download-btn {
+      padding: 8px 20px;
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background 0.2s;
+      font-family: inherit;
+    }
+    #download-btn:hover { background: #357abd; }
+
+    /* ---- Table ---- */
+    #table-container {
+      width: 100%;
+      max-height: 600px;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+
+    #result-table,
+    #result-table-2 {
+      border-collapse: collapse;
+      min-width: 100%;
+      font-size: 13px;
+    }
+
+    #result-table thead,
+    #result-table-2 thead {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    #result-table th,
+    #result-table-2 th {
+      background: #FAFAFA;
+      border: 1px solid var(--border);
+      padding: 10px 12px;
+      white-space: nowrap;
+      font-weight: 600;
+      text-align: left;
+      color: var(--text);
+    }
+
+    #result-table td,
+    #result-table-2 td {
+      border: 1px solid var(--border);
+      padding: 8px 12px;
+      vertical-align: top;
+      color: var(--text);
+    }
+
+    #result-table tbody tr:nth-child(even) td,
+    #result-table-2 tbody tr:nth-child(even) td {
+      background: #FAFBFC;
+    }
+    #result-table tbody tr:hover td,
+    #result-table-2 tbody tr:hover td {
+      background: rgba(74, 144, 226, 0.06);
+    }
+
+    /* sticky first column */
+    #result-table th:first-child,
+    #result-table td:first-child,
+    #result-table-2 th:first-child,
+    #result-table-2 td:first-child {
+      position: sticky;
+      left: 0;
+      z-index: 5;
+      background: white;
+      border-right: 2px solid var(--border);
+      text-align: center;
+      min-width: 54px;
+    }
+    #result-table thead th:first-child,
+    #result-table-2 thead th:first-child {
+      z-index: 15;
+      background: #FAFAFA;
+    }
+    #result-table tbody tr:nth-child(even) td:first-child,
+    #result-table-2 tbody tr:nth-child(even) td:first-child {
+      background: #FAFBFC;
+    }
+    #result-table tbody tr:hover td:first-child,
+    #result-table-2 tbody tr:hover td:first-child {
+      background: rgba(74, 144, 226, 0.06);
+    }
+
+    .cell-multiline {
+      white-space: pre-line;
+      min-width: 180px;
+      max-width: 280px;
+      line-height: 1.6;
+    }
+
+    .cell-caption {
+      max-width: 220px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      cursor: default;
+    }
+
+    .cell-url {
+      white-space: nowrap;
+    }
+    .cell-url a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+    .cell-url a:hover { text-decoration: underline; }
+
+    .cell-error {
+      background: var(--bg-error) !important;
+    }
+
+    .cell-snr { white-space: nowrap; }
+
+    /* ---- Preview button ---- */
+    .btn-preview {
+      padding: 3px 10px;
+      font-size: 12px;
+      font-family: inherit;
+      color: var(--primary);
+      background: none;
+      border: 1px solid var(--primary);
+      border-radius: 4px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s, color 0.15s;
+    }
+    .btn-preview:hover {
+      background: var(--primary);
+      color: white;
+    }
+
+    /* ---- Sheet Tabs ---- */
+    .tab-bar {
+      display: flex;
+      gap: 0;
+      border-bottom: 2px solid var(--border);
+      margin-bottom: 16px;
+    }
+    .tab-btn {
+      padding: 8px 20px;
+      font-size: 14px;
+      font-family: inherit;
+      border: none;
+      background: none;
+      cursor: pointer;
+      color: var(--text-light);
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab-btn.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+      font-weight: 600;
+    }
+    .tab-btn:hover:not(.active) { color: var(--text); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    /* ---- Download Area ---- */
+    #download-area {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: flex-end;
+    }
+    #zip-path-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    #zip-path-label {
+      font-size: 13px;
+      color: var(--text-light);
+      white-space: nowrap;
+    }
+    #zip-extract-path {
+      width: 380px;
+      padding: 5px 10px;
+      font-size: 13px;
+      font-family: "SF Mono", "Menlo", "Monaco", monospace;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    #zip-extract-path:focus { border-color: var(--primary); }
+    #zip-path-hint {
+      font-size: 12px;
+      color: #aaa;
+      white-space: nowrap;
+    }
+    #download-btns {
+      display: flex;
+      gap: 8px;
+    }
+
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>标注评估数据处理工具</h1>
+    <p>上传 format JSON 或标注导出 CSV 文件，自动提取人评结果并生成 CSV/ZIP
+      &nbsp;<span id="xlsx-status" style="font-size:12px;color:#aaa;">（库加载中...）</span>
+    </p>
+  </header>
+
+  <!-- Upload -->
+  <div class="card">
+    <div id="drop-zone">
+      <div class="upload-icon">&#8679;</div>
+      <p class="upload-main">
+        拖拽文件到此处，或<span class="upload-link">点击选择文件</span>
+      </p>
+      <p class="upload-hint">支持 .json（format 文件）或 .csv（标注导出文件）</p>
+      <input type="file" id="file-input" accept=".json,.csv">
+    </div>
+  </div>
+
+  <!-- Status -->
+  <div class="card" id="status-section">
+    <div id="status-bar">
+      <div id="progress-spinner"></div>
+      <span id="status-text">正在处理...</span>
+    </div>
+    <div id="warning-panel">
+      <h4>处理警告</h4>
+      <ul id="warning-list"></ul>
+    </div>
+  </div>
+
+  <!-- Result -->
+  <div class="card" id="result-section">
+    <div id="result-header">
+      <div id="result-stats">
+        共处理 <strong id="row-count">0</strong> 条记录，
+        最多 <strong id="error-col-count">0</strong> 个错误
+      </div>
+      <div id="download-area">
+        <div id="zip-path-row">
+          <label for="zip-extract-path" id="zip-path-label">ZIP 解压目录路径：</label>
+          <input type="text" id="zip-extract-path" placeholder="例：/Users/xxx/Downloads/evaluation_result_2026-03-04" spellcheck="false">
+          <span id="zip-path-hint">填入后 CSV 里的机评预览列将生成可点击的 file:// 链接</span>
+        </div>
+        <div id="download-btns">
+          <button id="download-zip-btn">下载 ZIP（含机评预览 HTML）</button>
+          <button id="download-btn">下载 CSV</button>
+        </div>
+      </div>
+    </div>
+    <!-- Sheet Tabs -->
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="sheet1">Sheet1 · 机评+人评最终结果</button>
+      <button class="tab-btn" data-tab="sheet2">Sheet2 · 机评原始结果</button>
+    </div>
+    <!-- Sheet1 -->
+    <div class="tab-panel active" id="panel-sheet1">
+      <div id="table-container">
+        <table id="result-table">
+          <thead><tr id="table-head-row"></tr></thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <!-- Sheet2 -->
+    <div class="tab-panel" id="panel-sheet2">
+      <div id="table-container-2" style="width:100%;max-height:600px;overflow:auto;border:1px solid var(--border);border-radius:var(--radius);">
+        <table id="result-table-2" style="border-collapse:collapse;min-width:100%;font-size:13px;">
+          <thead><tr id="table-head-row-2"></tr></thead>
+          <tbody id="table-body-2"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ============================================================
+// 模块 1: 常量
+// ============================================================
+const VALID_CATEGORIES = new Set(["主体内容", "视觉风格", "镜头与构图", "逻辑与交互", "文本与版式"]);
+const MACHINE_EVAL_KEY_EXACT   = "input_1769675643683";
+const MACHINE_EVAL_KEY_PARTIAL = "zj_img_caption_accuracy_v2";
+const CSV_FIXED_HEADERS = ["index", "source_id", "md5", "image_url", "caption", "summary", "snr", "label_preview", "machine_html_preview"];
+
+// ============================================================
+// 模块 2: 业务逻辑（对应 Python 函数）
+// ============================================================
+
+function cleanAttribution(value) {
+  if (!value || typeof value !== "string") return value || "";
+  return value.replace(/[(（]模糊[)）]/g, "").trim();
+}
+
+function extractConceptsFromDetailList(detailList) {
+  const concepts = [];
+  if (!Array.isArray(detailList)) return concepts;
+  for (const sentenceData of detailList) {
+    const qaResults = sentenceData?.qa_results;
+    if (!Array.isArray(qaResults)) continue;
+    for (const qa of qaResults) {
+      concepts.push({
+        concept:     qa.concept     ?? "",
+        category:    qa.category    ?? "",
+        start_index: qa.start_index ?? null,
+        end_index:   qa.end_index   ?? null,
+        conclusion:  qa.conclusion  ?? "true",
+      });
+    }
+  }
+  return concepts;
+}
+
+function parseHumanErrors(objOutput) {
+  const errors = [];
+  if (!Array.isArray(objOutput)) return errors;
+
+  for (const obj of objOutput) {
+    const data     = obj?.data ?? {};
+    const location = data?.location ?? {};
+    const label    = obj?.label ?? "";
+    const tags     = obj?.tags ?? [];
+    const attribution = {};
+
+    for (const tag of tags) {
+      const tagLabel = tag?.label ?? "";
+      const tagValue = tag?.value ?? [];
+      if (tagLabel.includes("归因") && tagValue) {
+        // catName = tagLabel 去掉"归因"部分
+        const catName = tagLabel.replace("归因", "").trim();
+        if (VALID_CATEGORIES.has(catName)) {
+          const val = Array.isArray(tagValue) ? (tagValue[0] ?? "") : tagValue;
+          attribution[catName] = cleanAttribution(String(val));
+        }
+      }
+    }
+
+    // 如果 tags 没有归因信息但 label 本身就是类目名
+    if (Object.keys(attribution).length === 0 && label) {
+      const catName = label.trim();
+      if (VALID_CATEGORIES.has(catName)) {
+        attribution[catName] = "";
+      }
+    }
+
+    errors.push({
+      text:        data?.text ?? "",
+      start_index: location?.startIndex ?? 0,
+      end_index:   location?.endIndex   ?? 0,
+      attribution,
+    });
+  }
+  return errors;
+}
+
+function parseMachineEval(outputDict) {
+  if (!outputDict || typeof outputDict !== "object") return [[], 0];
+
+  // 路径 A（JSON 格式）：value 是 JSON 字符串，需要先解析
+  let evalStr = outputDict[MACHINE_EVAL_KEY_EXACT] ?? "";
+  if (!evalStr) {
+    for (const val of Object.values(outputDict)) {
+      if (typeof val === "string" && val.includes(MACHINE_EVAL_KEY_PARTIAL)) {
+        evalStr = val;
+        break;
+      }
+    }
+  }
+
+  let dataList = null;
+
+  if (evalStr) {
+    let evalData;
+    try { evalData = JSON.parse(evalStr); } catch (e) { return [[], 0]; }
+    dataList = evalData?.data ?? [];
+  } else {
+    // 路径 B（CSV 格式）：outputDict 本身就是 raw_data 解析后的对象 {data:[...]}
+    if (Array.isArray(outputDict.data)) {
+      dataList = outputDict.data;
+    }
+  }
+
+  if (!dataList || !dataList.length) return [[], 0];
+
+  const accuracy = dataList[0]?.[MACHINE_EVAL_KEY_PARTIAL];
+  if (!accuracy || accuracy.code !== 200) return [[], 0];
+
+  const value   = accuracy?.value ?? {};
+  const summary = value?.summary ?? {};
+  const totalPoints = summary?.total_points ?? 0;
+  const detailList  = value?.detail_list ?? [];
+  const modelConcepts = extractConceptsFromDetailList(detailList);
+
+  return [modelConcepts, totalPoints];
+}
+
+/** 从 service_param.output 提取 human_reading_html 字符串 */
+function extractMachineHtml(outputDict) {
+  if (!outputDict || typeof outputDict !== "object") return "";
+
+  let evalStr = outputDict[MACHINE_EVAL_KEY_EXACT] ?? "";
+  if (!evalStr) {
+    for (const val of Object.values(outputDict)) {
+      if (typeof val === "string" && val.includes(MACHINE_EVAL_KEY_PARTIAL)) { evalStr = val; break; }
+    }
+  }
+
+  let dataList = null;
+  if (evalStr) {
+    try { dataList = JSON.parse(evalStr)?.data ?? []; } catch (e) { return ""; }
+  } else if (Array.isArray(outputDict.data)) {
+    dataList = outputDict.data;
+  }
+
+  if (!dataList?.length) return "";
+  const accuracy = dataList[0]?.[MACHINE_EVAL_KEY_PARTIAL];
+  if (!accuracy || accuracy.code !== 200) return "";
+  return accuracy?.value?.human_reading_html ?? "";
+}
+
+/**
+ * extractMachineEvalSheet(data)
+ * 提取机评原始结果，返回与 processFormatData 同格式的对象，
+ * error_list 只包含 conclusion === "false" 的概念点。
+ * summary 使用机评原始字段。
+ */
+function extractMachineEvalSheet(data) {
+  const sp  = data?.service_param ?? {};
+  const inp = sp?.input ?? {};
+
+  const outputDict = sp?.output ?? {};
+
+  // 复用 parseMachineEval 的查找逻辑，但这里需要完整的机评值
+  let evalStr = outputDict[MACHINE_EVAL_KEY_EXACT] ?? "";
+  if (!evalStr) {
+    for (const val of Object.values(outputDict)) {
+      if (typeof val === "string" && val.includes(MACHINE_EVAL_KEY_PARTIAL)) { evalStr = val; break; }
+    }
+  }
+
+  let dataList = null;
+  if (evalStr) {
+    try { dataList = JSON.parse(evalStr)?.data ?? []; } catch (e) { /* ignore */ }
+  } else if (Array.isArray(outputDict.data)) {
+    dataList = outputDict.data;
+  }
+
+  if (!dataList?.length) {
+    return {
+      source_id:         inp?.source_id ?? "",
+      md5:               inp?.md5 ?? "",
+      cut_off_url:       inp?.cut_off_url ?? "",
+      caption:           inp?.long_long_caption ?? "",
+      label_preview_url: inp?.label_preview_url ?? "",
+      machine_html:      "",
+      total_points:      0,
+      error_count:       0,
+      snr:               1.0,
+      machine_summary:   null,
+      error_list:        [],
+    };
+  }
+
+  const accuracy = dataList[0]?.[MACHINE_EVAL_KEY_PARTIAL];
+  if (!accuracy || accuracy.code !== 200) {
+    return {
+      source_id:         inp?.source_id ?? "",
+      md5:               inp?.md5 ?? "",
+      cut_off_url:       inp?.cut_off_url ?? "",
+      caption:           inp?.long_long_caption ?? "",
+      label_preview_url: inp?.label_preview_url ?? "",
+      machine_html:      "",
+      total_points:      0,
+      error_count:       0,
+      snr:               1.0,
+      machine_summary:   null,
+      error_list:        [],
+    };
+  }
+
+  const value   = accuracy?.value ?? {};
+  const summary = value?.summary ?? {};
+  const totalPoints      = summary?.total_points ?? 0;
+  const incorrectPoints  = summary?.incorrect_points ?? 0;
+  const ambiguousPoints  = summary?.ambiguous_points ?? 0;
+
+  // 收集所有 qa_results，只保留 conclusion === "false" 的
+  const errorList = [];
+  for (const sentenceData of (value?.detail_list ?? [])) {
+    for (const qa of (sentenceData?.qa_results ?? [])) {
+      if (qa.conclusion === "false") {
+        errorList.push({
+          concept:     qa.concept     ?? "",
+          category:    qa.category    ?? "",
+          start_index: qa.start_index ?? 0,
+          end_index:   qa.end_index   ?? 0,
+          conclusion:  qa.conclusion  ?? "",
+          question:    qa.question    ?? "",
+          reason:      qa.reason      ?? "",
+        });
+      }
+    }
+  }
+  errorList.sort((a, b) => a.start_index - b.start_index || a.end_index - b.end_index);
+
+  const snr = totalPoints > 0 ? (totalPoints - incorrectPoints) / totalPoints : 1.0;
+
+  return {
+    source_id:         inp?.source_id ?? "",
+    md5:               inp?.md5 ?? "",
+    cut_off_url:       inp?.cut_off_url ?? "",
+    caption:           inp?.long_long_caption ?? "",
+    label_preview_url: inp?.label_preview_url ?? "",
+    machine_html:      value?.human_reading_html ?? "",
+    total_points:      totalPoints,
+    error_count:       incorrectPoints,
+    snr,
+    machine_summary:   summary,
+    error_list:        errorList,
+  };
+}
+
+// ============================================================
+// CSV 输入解析（将标注导出 CSV 转为 processFormatData 所需结构）
+// ============================================================
+
+/**
+ * parseCSVText(text)
+ * 解析 CSV 文本，返回按题目ID去重后的 format-like 对象数组
+ * 每行映射：
+ *   output.raw_data (JSON字符串) → service_param.output（机评）
+ *   标注答案.objects              → service_param.objOutput（人评）
+ *   input.long_long_caption      → service_param.input.long_long_caption
+ *   input.url_cos                → service_param.input.cut_off_url
+ *   题目ID                       → service_param.input.source_id
+ */
+function parseCSVText(text) {
+  // 全文单次状态机解析，正确处理引号内换行、双引号转义
+  // 去 BOM
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+
+  const allRows = [];   // 每行是字段数组
+  let fields = [];
+  let cur = "";
+  let inQuote = false;
+
+  for (let i = 0; i <= text.length; i++) {
+    const ch = i < text.length ? text[i] : '\n'; // 末尾补一个换行触发最后一行
+    if (inQuote) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { cur += '"'; i++; } // "" → "
+        else inQuote = false;                           // 结束引号
+      } else {
+        cur += ch;
+      }
+    } else {
+      if (ch === '"') {
+        inQuote = true;
+      } else if (ch === ',') {
+        fields.push(cur); cur = "";
+      } else if (ch === '\n' || ch === '\r') {
+        fields.push(cur); cur = "";
+        if (ch === '\r' && text[i + 1] === '\n') i++;
+        if (fields.some(f => f.length > 0)) allRows.push(fields);
+        fields = [];
+      } else {
+        cur += ch;
+      }
+    }
+  }
+
+  if (allRows.length < 2) return [];
+
+  const headers = allRows[0];
+  const seen = new Set();
+  const results = [];
+
+  for (let i = 1; i < allRows.length; i++) {
+    const cells = allRows[i];
+    const row = {};
+    headers.forEach((h, idx) => { row[h] = cells[idx] ?? ""; });
+
+    const sourceId = (row["题目ID"] ?? "").trim();
+    if (!sourceId) continue;
+    if (seen.has(sourceId)) continue; // 按题目ID去重，保留第一行
+    seen.add(sourceId);
+
+    // 解析机评数据
+    let outputObj = {};
+    const rawDataStr = row["output.raw_data"] ?? "";
+    if (rawDataStr) {
+      try { outputObj = JSON.parse(rawDataStr); } catch (e) { /* ignore */ }
+    }
+
+    // 解析人评数据
+    let objOutput = [];
+    const ansStr = row["标注答案"] ?? "";
+    if (ansStr) {
+      try {
+        const ans = JSON.parse(ansStr);
+        objOutput = ans?.objects ?? [];
+      } catch (e) { /* ignore */ }
+    }
+
+    results.push({
+      service_param: {
+        input: {
+          source_id:          sourceId,
+          md5:                "",
+          cut_off_url:        row["input.url_cos"] ?? "",
+          long_long_caption:  row["input.long_long_caption"] ?? "",
+          label_preview_url:  row["结果预览"] ?? "",
+        },
+        output:    outputObj,
+        objOutput: objOutput,
+      }
+    });
+  }
+
+  return results;
+}
+
+function findMatchingConcepts(humanError, modelConcepts) {
+  if (!modelConcepts.length) return [];
+
+  const hStart = humanError.start_index;
+  const hEnd   = humanError.end_index;
+  const hText  = humanError.text ?? "";
+
+  // index overlap (same logic as Python)
+  const byIndex = modelConcepts.filter(c => {
+    const cStart = c.start_index ?? 0;
+    const cEnd   = c.end_index   ?? 0;
+    return (hStart <= cStart && cStart < hEnd) ||
+           (hStart < cEnd   && cEnd   <= hEnd) ||
+           (cStart <= hStart && hStart < cEnd) ||
+           (cStart < hEnd   && hEnd   <= cEnd);
+  });
+  if (byIndex.length) return byIndex;
+
+  // fallback: text inclusion
+  if (hText) {
+    return modelConcepts.filter(c => {
+      const cText = c.concept ?? "";
+      return cText && (hText.includes(cText) || cText.includes(hText));
+    });
+  }
+  return [];
+}
+
+function determineCategory(humanError, matchedConcepts) {
+  const attribution = humanError.attribution ?? {};
+
+  if (matchedConcepts.length) {
+    const modelCat = matchedConcepts[0].category ?? "";
+    const level1   = modelCat.includes("-")
+      ? modelCat.split("-")[0].trim()
+      : modelCat.trim();
+
+    if (level1 && attribution[level1] !== undefined) {
+      if (attribution[level1]) return `${level1}-${attribution[level1]}`;
+    }
+    for (const [cat, val] of Object.entries(attribution)) {
+      if (val) return `${cat}-${val}`;
+    }
+    return modelCat;
+  }
+
+  for (const [cat, val] of Object.entries(attribution)) {
+    if (val) return `${cat}-${val}`;
+  }
+  return "未分类";
+}
+
+function processFormatData(data) {
+  const sp  = data?.service_param ?? {};
+  const inp = sp?.input  ?? {};
+
+  const [modelConcepts, totalPoints] = parseMachineEval(sp?.output ?? {});
+  const humanErrors = parseHumanErrors(sp?.objOutput ?? []);
+
+  const errorList   = [];
+  let extraPoints   = 0;
+  let mergedAway    = 0;
+  const seen        = new Set();
+
+  for (const he of humanErrors) {
+    const key = `${he.start_index}|${he.end_index}|${he.text}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const matched  = findMatchingConcepts(he, modelConcepts);
+    const category = determineCategory(he, matched);
+
+    if (matched.length > 1) mergedAway += matched.length - 1;
+    if (!matched.length)    extraPoints += 1;
+
+    errorList.push({
+      concept:     he.text ?? "",
+      category,
+      start_index: he.start_index,
+      end_index:   he.end_index,
+    });
+  }
+
+  errorList.sort((a, b) => a.start_index - b.start_index || a.end_index - b.end_index);
+
+  const adjustedTotal = totalPoints + extraPoints - mergedAway;
+  const errorCount    = errorList.length;
+  const snr = adjustedTotal > 0
+    ? (adjustedTotal - errorCount) / adjustedTotal
+    : 1.0;
+
+  return {
+    source_id:         inp?.source_id          ?? "",
+    md5:               inp?.md5                ?? "",
+    cut_off_url:       inp?.cut_off_url        ?? "",
+    caption:           inp?.long_long_caption  ?? "",
+    label_preview_url: inp?.label_preview_url  ?? "",
+    machine_html:      extractMachineHtml(sp?.output ?? {}),
+    total_points:      adjustedTotal,
+    error_count:       errorCount,
+    snr,
+    error_list:        errorList,
+  };
+}
+
+// ============================================================
+// 模块 3: CSV 生成
+// ============================================================
+
+function escapeCSVCell(value) {
+  if (value === null || value === undefined) return "";
+  const s = String(value);
+  if (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+function formatSummary(row) {
+  const errorRatio = row.total_points > 0
+    ? (row.error_count / row.total_points).toFixed(4)
+    : "0";
+  return [
+    `total_points：${row.total_points}`,
+    `error_count：${row.error_count}`,
+    `error_ratio：${errorRatio}`,
+  ].join("\n");
+}
+
+function formatMachineSummary(row) {
+  const s = row.machine_summary;
+  if (!s) return formatSummary(row);
+  return [
+    `total_points：${s.total_points ?? 0}`,
+    `incorrect_points：${s.incorrect_points ?? 0}`,
+    `incorrect_point_ratio：${s.incorrect_point_ratio ?? 0}`,
+    `ambiguous_points：${s.ambiguous_points ?? 0}`,
+    `ambiguous_point_ratio：${s.ambiguous_point_ratio ?? 0}`,
+  ].join("\n");
+}
+
+function formatErrorCell(err) {
+  return [
+    `concept：${err.concept ?? ""}`,
+    `category：${err.category ?? ""}`,
+    `start_index：${err.start_index ?? ""}`,
+    `end_index：${err.end_index ?? ""}`,
+  ].join("\n");
+}
+
+function formatMachineErrorCell(err) {
+  return [
+    `concept：${err.concept ?? ""}`,
+    `category：${err.category ?? ""}`,
+    `start_index：${err.start_index ?? ""}`,
+    `end_index：${err.end_index ?? ""}`,
+    `conclusion：${err.conclusion ?? ""}`,
+    `question：${err.question ?? ""}`,
+    `reason：${err.reason ?? ""}`,
+  ].join("\n");
+}
+
+const EXCEL_MAX_LEN = 32767;
+function xlCell(v) {
+  if (v === null || v === undefined) return "";
+  const s = String(v);
+  return s.length > EXCEL_MAX_LEN ? s.slice(0, EXCEL_MAX_LEN) : s;
+}
+
+/**
+ * buildSheetData(rows, summaryFn, errorFn, extractDir)
+ * 将处理结果数组转为二维数组（供 SheetJS / CSV 使用）
+ * extractDir: 用户填入的 ZIP 解压目录，有值时 machine_html_preview 列生成 file:// 链接
+ */
+function buildSheetData(rows, summaryFn, errorFn = formatErrorCell, extractDir = "") {
+  const maxErrors = rows.reduce((m, r) => Math.max(m, r.error_list.length), 0);
+  const errorHeaders = Array.from({ length: maxErrors }, (_, i) => `error_${i + 1}`);
+  const headers = [...CSV_FIXED_HEADERS, ...errorHeaders];
+
+  // 规范化目录路径：去掉末尾斜杠
+  const baseDir = extractDir.trim().replace(/[/\\]+$/, "");
+
+  const data = [headers];
+  rows.forEach((row, idx) => {
+    const snrStr = typeof row.snr === "number" ? row.snr.toFixed(4) : "";
+    const sid = (row.source_id || String(idx + 1)).replace(/[\\/:*?"<>|]/g, "_");
+    let htmlCell = "";
+    if (row.machine_html) {
+      if (baseDir) {
+        // 生成 file:// 绝对路径（macOS/Linux 用 file:///path，Windows 用 file:///C:/path）
+        const sep = baseDir.startsWith("/") ? "/" : "/";
+        htmlCell = `file://${baseDir}${sep}previews/${sid}.html`;
+      } else {
+        htmlCell = `previews/${sid}.html`;
+      }
+    }
+    const fixed = [
+      idx + 1,
+      xlCell(row.source_id),
+      xlCell(row.md5),
+      xlCell(row.cut_off_url),
+      xlCell(row.caption),
+      xlCell(summaryFn(row)),
+      snrStr,
+      xlCell(row.label_preview_url),
+      htmlCell,
+    ];
+    const errorCells = Array.from({ length: maxErrors }, (_, i) => {
+      const e = row.error_list[i];
+      return e ? xlCell(errorFn(e)) : "";
+    });
+    data.push([...fixed, ...errorCells]);
+  });
+  return data;
+}
+
+/**
+ * buildCsvText(sheetData)
+ * 将二维数组转为 CSV 文本（UTF-8 BOM）
+ */
+function buildCsvText(sheetData) {
+  const lines = sheetData.map(row =>
+    row.map(cell => {
+      const s = cell === null || cell === undefined ? "" : String(cell);
+      if (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")) {
+        return '"' + s.replace(/"/g, '""') + '"';
+      }
+      return s;
+    }).join(",")
+  );
+  return "\uFEFF" + lines.join("\r\n");
+}
+
+// ============================================================
+// 模块 4: UI 渲染
+// ============================================================
+
+function renderTable(rows) {
+  _renderTableImpl(rows, formatSummary,
+    "table-head-row", "table-body");
+  document.getElementById("row-count").textContent      = rows.length;
+  const maxE = rows.reduce((m, r) => Math.max(m, r.error_list.length), 0);
+  document.getElementById("error-col-count").textContent = maxE;
+}
+
+function renderTable2(rows) {
+  _renderTableImpl(rows, formatMachineSummary,
+    "table-head-row-2", "table-body-2", formatMachineErrorCell);
+}
+
+function _renderTableImpl(rows, summaryFn, headId, bodyId, errorFn = formatErrorCell) {
+  const maxErrors = rows.reduce((m, r) => Math.max(m, r.error_list.length), 0);
+  const errorHeaders = Array.from({ length: maxErrors }, (_, i) => `error_${i + 1}`);
+  const headers = [...CSV_FIXED_HEADERS, ...errorHeaders];
+
+  document.getElementById(headId).innerHTML =
+    headers.map(h => `<th>${h}</th>`).join("");
+
+  const tbody = document.getElementById(bodyId);
+  const fragment = document.createDocumentFragment();
+
+  rows.forEach((row, idx) => {
+    const tr = document.createElement("tr");
+    const snrStr = typeof row.snr === "number" ? row.snr.toFixed(4) : "—";
+
+    // index
+    const tdIdx = document.createElement("td");
+    tdIdx.textContent = idx + 1;
+    tr.appendChild(tdIdx);
+
+    appendCell(tr, row.source_id);
+    appendCell(tr, row.md5);
+
+    // image_url
+    const tdUrl = document.createElement("td");
+    tdUrl.className = "cell-url";
+    if (row.cut_off_url) {
+      const a = document.createElement("a");
+      a.href = row.cut_off_url; a.target = "_blank"; a.rel = "noopener noreferrer";
+      a.textContent = "查看图片"; a.title = row.cut_off_url;
+      tdUrl.appendChild(a);
+    }
+    tr.appendChild(tdUrl);
+
+    // caption
+    const tdCap = document.createElement("td");
+    tdCap.className = "cell-caption";
+    tdCap.textContent = row.caption; tdCap.title = row.caption;
+    tr.appendChild(tdCap);
+
+    // summary
+    const tdSum = document.createElement("td");
+    tdSum.className = "cell-multiline";
+    tdSum.textContent = summaryFn(row);
+    tr.appendChild(tdSum);
+
+    appendCell(tr, snrStr, "cell-snr");
+
+    // label_preview
+    const tdLabelPreview = document.createElement("td");
+    tdLabelPreview.className = "cell-url";
+    if (row.label_preview_url) {
+      const a = document.createElement("a");
+      a.href = row.label_preview_url; a.target = "_blank"; a.rel = "noopener noreferrer";
+      a.textContent = "结果预览"; a.title = row.label_preview_url;
+      tdLabelPreview.appendChild(a);
+    }
+    tr.appendChild(tdLabelPreview);
+
+    // machine_html_preview
+    const tdHtmlPreview = document.createElement("td");
+    if (row.machine_html) {
+      const btn = document.createElement("button");
+      btn.className = "btn-preview";
+      btn.textContent = "预览";
+      btn.addEventListener("click", () => {
+        const blob = new Blob([row.machine_html], { type: "text/html;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank");
+        // 延迟释放，给浏览器时间加载
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      });
+      tdHtmlPreview.appendChild(btn);
+    }
+    tr.appendChild(tdHtmlPreview);
+
+    // error_N
+    for (let i = 0; i < maxErrors; i++) {
+      const td = document.createElement("td");
+      const e  = row.error_list[i];
+      if (e) { td.className = "cell-multiline cell-error"; td.textContent = errorFn(e); }
+      tr.appendChild(td);
+    }
+
+    fragment.appendChild(tr);
+  });
+
+  tbody.innerHTML = "";
+  tbody.appendChild(fragment);
+}
+
+function appendCell(tr, text, cls) {
+  const td = document.createElement("td");
+  td.textContent = text ?? "";
+  if (cls) td.className = cls;
+  tr.appendChild(td);
+}
+
+function showStatus(text, loading) {
+  document.getElementById("status-section").style.display = "block";
+  document.getElementById("status-text").textContent = text;
+  const spinner = document.getElementById("progress-spinner");
+  spinner.classList.toggle("hidden", !loading);
+}
+
+function addWarning(msg) {
+  const panel = document.getElementById("warning-panel");
+  const list  = document.getElementById("warning-list");
+  panel.style.display = "block";
+  const li = document.createElement("li");
+  li.textContent = msg;
+  list.appendChild(li);
+}
+
+function resetUI() {
+  document.getElementById("status-section").style.display  = "none";
+  document.getElementById("result-section").style.display  = "none";
+  document.getElementById("warning-panel").style.display   = "none";
+  document.getElementById("warning-list").innerHTML         = "";
+  document.getElementById("table-body").innerHTML           = "";
+  document.getElementById("table-head-row").innerHTML       = "";
+  document.getElementById("table-body-2").innerHTML         = "";
+  document.getElementById("table-head-row-2").innerHTML     = "";
+  window._xlsxData = null;
+}
+
+// ============================================================
+// 模块 5: 事件绑定
+// ============================================================
+
+window._xlsxData = null;
+
+function handleFile(file) {
+  if (!file) return;
+  const name = file.name.toLowerCase();
+  const isJSON = name.endsWith(".json");
+  const isCSV  = name.endsWith(".csv");
+
+  if (!isJSON && !isCSV) {
+    alert("请上传 .json 或 .csv 格式的文件");
+    return;
+  }
+
+  resetUI();
+  showStatus(`正在读取：${file.name}`, true);
+
+  const reader = new FileReader();
+
+  reader.onload = function(e) {
+    const text = e.target.result;
+
+    let items = [];
+
+    if (isJSON) {
+      let jsonData;
+      try {
+        jsonData = JSON.parse(text);
+      } catch (err) {
+        showStatus("JSON 解析失败", false);
+        addWarning(`格式错误：${err.message}`);
+        return;
+      }
+      items = Array.isArray(jsonData) ? jsonData : [jsonData];
+    } else {
+      // CSV
+      try {
+        items = parseCSVText(text);
+      } catch (err) {
+        showStatus("CSV 解析失败", false);
+        addWarning(`格式错误：${err.message}`);
+        return;
+      }
+      if (!items.length) {
+        showStatus("CSV 解析失败", false);
+        addWarning("未能从 CSV 中读取有效数据，请检查文件格式");
+        return;
+      }
+    }
+
+    showStatus(`正在处理 ${items.length} 条记录...`, true);
+
+    setTimeout(() => {
+      const sheet1Rows = [];
+      const sheet2Rows = [];
+      for (let i = 0; i < items.length; i++) {
+        try {
+          sheet1Rows.push(processFormatData(items[i]));
+          sheet2Rows.push(extractMachineEvalSheet(items[i]));
+        } catch (err) {
+          addWarning(`第 ${i + 1} 条记录处理失败：${err.message}`);
+        }
+      }
+
+      window._xlsxData = {
+        sheet1Rows,
+        sheet2Rows,
+      };
+      renderTable(sheet1Rows);
+      renderTable2(sheet2Rows);
+
+      document.getElementById("result-section").style.display = "block";
+      showStatus(`处理完成，共 ${sheet1Rows.length} 条记录`, false);
+    }, 30);
+  };
+
+  reader.onerror = () => {
+    showStatus("文件读取失败", false);
+    addWarning("无法读取文件，请检查文件权限");
+  };
+
+  reader.readAsText(file, "UTF-8");
+}
+
+function downloadXlsx() {
+  if (!window._xlsxData) {
+    showDownloadError("暂无数据可下载，请先上传文件");
+    return;
+  }
+  const extractDir = document.getElementById("zip-extract-path").value;
+  try {
+    const { sheet1Rows, sheet2Rows } = window._xlsxData;
+    const sheet1 = buildSheetData(sheet1Rows, formatSummary, formatErrorCell, extractDir);
+    const sheet2 = buildSheetData(sheet2Rows, formatMachineSummary, formatMachineErrorCell, extractDir);
+    const dateStr = new Date().toISOString().slice(0, 10);
+
+    function triggerCsvDownload(csvText, filename) {
+      const blob = new Blob([csvText], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    }
+
+    triggerCsvDownload(buildCsvText(sheet1), `sheet1_机评+人评_${dateStr}.csv`);
+    // 稍作延迟再触发第二个，避免浏览器阻止连续下载
+    setTimeout(() => triggerCsvDownload(buildCsvText(sheet2), `sheet2_机评原始_${dateStr}.csv`), 300);
+  } catch (err) {
+    showDownloadError("下载失败：" + err.message);
+  }
+}
+
+async function downloadZip() {
+  if (!window._xlsxData) {
+    showDownloadError("暂无数据可下载，请先上传文件");
+    return;
+  }
+  if (typeof JSZip === "undefined") {
+    showDownloadError("JSZip 库未加载，请检查网络连接后刷新页面重试");
+    return;
+  }
+
+  const zipBtn = document.getElementById("download-zip-btn");
+  zipBtn.disabled = true;
+  zipBtn.textContent = "打包中...";
+
+  try {
+    const extractDir = document.getElementById("zip-extract-path").value;
+    const { sheet1Rows, sheet2Rows } = window._xlsxData;
+    const sheet1 = buildSheetData(sheet1Rows, formatSummary, formatErrorCell, extractDir);
+    const sheet2 = buildSheetData(sheet2Rows, formatMachineSummary, formatMachineErrorCell, extractDir);
+
+    const zip = new JSZip();
+    const dateStr = new Date().toISOString().slice(0, 10);
+
+    zip.file("sheet1_机评+人评.csv", buildCsvText(sheet1));
+    zip.file("sheet2_机评原始.csv",  buildCsvText(sheet2));
+
+    // previews/ 目录
+    const previewFolder = zip.folder("previews");
+    for (let idx = 0; idx < sheet1Rows.length; idx++) {
+      const s1 = sheet1Rows[idx];
+      const s2 = sheet2Rows?.[idx];
+      const html = (s2?.machine_html) || (s1?.machine_html) || "";
+      if (!html) continue;
+      const sid = (s1.source_id || String(idx + 1)).replace(/[\\/:*?"<>|]/g, "_");
+      previewFolder.file(`${sid}.html`, html);
+    }
+
+    const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 6 } });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `evaluation_result_${dateStr}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (err) {
+    showDownloadError("ZIP 下载失败：" + err.message);
+  } finally {
+    zipBtn.disabled = false;
+    zipBtn.textContent = "下载 ZIP（含机评预览 HTML）";
+  }
+}
+
+function showDownloadError(msg) {
+  const btn = document.getElementById("download-btn");
+  const existing = document.getElementById("download-error-msg");
+  if (existing) existing.remove();
+  const span = document.createElement("span");
+  span.id = "download-error-msg";
+  span.style.cssText = "color:#FF4D4F;font-size:13px;margin-left:12px;";
+  span.textContent = msg;
+  btn.parentNode.insertBefore(span, btn.nextSibling);
+  setTimeout(() => span.remove(), 8000);
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  // 检查 JSZip 是否加载成功
+  const xlsxStatusEl = document.getElementById("xlsx-status");
+  if (typeof JSZip !== "undefined") {
+    xlsxStatusEl.textContent = "（ZIP 库已就绪）";
+    xlsxStatusEl.style.color = "#52C41A";
+  } else {
+    xlsxStatusEl.textContent = "（JSZip 库加载失败，ZIP 下载不可用）";
+    xlsxStatusEl.style.color = "#FF4D4F";
+  }
+
+  const dropZone    = document.getElementById("drop-zone");
+  const fileInput   = document.getElementById("file-input");
+  const downloadBtn = document.getElementById("download-btn");
+
+  // 点击上传（排除 input 自身，避免二次触发）
+  dropZone.addEventListener("click", (e) => {
+    if (e.target === fileInput) return;
+    fileInput.click();
+  });
+  fileInput.addEventListener("change", e => {
+    if (e.target.files[0]) {
+      handleFile(e.target.files[0]);
+      e.target.value = "";
+    }
+  });
+
+  // 拖拽上传
+  dropZone.addEventListener("dragover", e => {
+    e.preventDefault();
+    dropZone.classList.add("drag-over");
+  });
+  ["dragleave", "dragend"].forEach(evt =>
+    dropZone.addEventListener(evt, () => dropZone.classList.remove("drag-over"))
+  );
+  dropZone.addEventListener("drop", e => {
+    e.preventDefault();
+    dropZone.classList.remove("drag-over");
+    if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+  });
+
+  // 下载
+  downloadBtn.addEventListener("click", downloadXlsx);
+  document.getElementById("download-zip-btn").addEventListener("click", downloadZip);
+
+  // Tab 切换
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("panel-" + btn.dataset.tab).classList.add("active");
+    });
+  });
+});
+</script>
+</body>
+</html>
