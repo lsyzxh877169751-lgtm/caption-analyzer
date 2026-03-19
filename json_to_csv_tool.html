@@ -410,6 +410,7 @@
         <div id="download-btns">
           <button id="download-zip-btn">下载 ZIP（含机评预览 HTML）</button>
           <button id="download-btn">下载 CSV</button>
+          <button id="download-report-btn" style="padding:8px 20px;background:#6366f1;color:white;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-family:inherit;transition:background 0.2s;" onmouseover="this.style.background='#4f46e5'" onmouseout="this.style.background='#6366f1'">📤 分享报告</button>
         </div>
       </div>
     </div>
@@ -1249,6 +1250,220 @@ function handleFile(file) {
   reader.readAsText(file, "UTF-8");
 }
 
+function downloadReport() {
+  if (!window._xlsxData) {
+    showDownloadError("暂无数据可下载，请先上传文件");
+    return;
+  }
+  const { sheet1Rows, sheet2Rows } = window._xlsxData;
+  const dateStr = new Date().toISOString().slice(0, 16).replace("T", " ");
+
+  // ── 统计汇总 ──────────────────────────────────────────────
+  const totalRows   = sheet1Rows.length;
+  const totalPoints = sheet1Rows.reduce((s, r) => s + (r.total_points || 0), 0);
+  const totalErrors = sheet1Rows.reduce((s, r) => s + (r.error_count  || 0), 0);
+  const avgSnr      = totalRows > 0
+    ? sheet1Rows.reduce((s, r) => s + (typeof r.snr === "number" ? r.snr : 1), 0) / totalRows
+    : 1;
+  const errorRate   = totalPoints > 0 ? totalErrors / totalPoints : 0;
+
+  // ── 错误归因分布（一级类目）─────────────────────────────
+  const catCount = {};
+  sheet1Rows.forEach(r => {
+    (r.error_list || []).forEach(e => {
+      const cat1 = (e.category || "未分类").split("-")[0].trim() || "未分类";
+      catCount[cat1] = (catCount[cat1] || 0) + 1;
+    });
+  });
+  const sortedCats = Object.entries(catCount).sort((a, b) => b[1] - a[1]);
+  const maxCatVal  = sortedCats.length ? sortedCats[0][1] : 1;
+
+  // ── 错误归因分布（二级类目）─────────────────────────────
+  const cat2Count = {};
+  sheet1Rows.forEach(r => {
+    (r.error_list || []).forEach(e => {
+      const cat = (e.category || "未分类").trim() || "未分类";
+      cat2Count[cat] = (cat2Count[cat] || 0) + 1;
+    });
+  });
+  const sortedCat2 = Object.entries(cat2Count).sort((a, b) => b[1] - a[1]).slice(0, 15);
+
+  // ── 构建归因柱状图 HTML（纯 CSS，无外部依赖）──────────────
+  function buildBarChart(entries, maxVal, title) {
+    const COLORS = ["#6366f1","#8b5cf6","#ec4899","#f59e0b","#10b981","#3b82f6","#ef4444","#14b8a6","#f97316","#a855f7"];
+    const bars = entries.map(([label, val], i) => {
+      const pct = maxVal > 0 ? (val / maxVal * 100).toFixed(1) : 0;
+      const color = COLORS[i % COLORS.length];
+      return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <div style="width:130px;font-size:12px;color:#444;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0;" title="${esc(label)}">${esc(label)}</div>
+        <div style="flex:1;background:#f0f0f0;border-radius:4px;height:20px;position:relative;">
+          <div style="width:${pct}%;background:${color};height:100%;border-radius:4px;transition:width 0.3s;"></div>
+        </div>
+        <div style="width:36px;font-size:12px;color:#666;text-align:right;flex-shrink:0;">${val}</div>
+      </div>`;
+    }).join("");
+    return `<div style="margin-bottom:28px;">
+      <div style="font-size:14px;font-weight:600;color:#222;margin-bottom:12px;">${esc(title)}</div>
+      ${bars || '<div style="color:#aaa;font-size:13px;">暂无数据</div>'}
+    </div>`;
+  }
+
+  // ── 构建表格 HTML ─────────────────────────────────────────
+  function buildTableHtml(rows, summaryFn, errorFn) {
+    if (!rows.length) return '<div style="color:#aaa;padding:20px;text-align:center;">暂无数据</div>';
+    const maxErrors = rows.reduce((m, r) => Math.max(m, r.error_list.length), 0);
+    const errorHeaders = Array.from({ length: maxErrors }, (_, i) => `error_${i + 1}`);
+    const headers = [...CSV_FIXED_HEADERS, ...errorHeaders];
+
+    const thStyle = 'style="padding:8px 12px;background:#f4f6fb;font-size:12px;font-weight:600;color:#555;white-space:nowrap;border-bottom:2px solid #e8eaf0;text-align:left;position:sticky;top:0;z-index:2;"';
+    const thead = `<thead><tr>${headers.map(h => `<th ${thStyle}>${esc(h)}</th>`).join("")}</tr></thead>`;
+
+    const tbodyRows = rows.map((row, idx) => {
+      const snrVal = typeof row.snr === "number" ? row.snr : 1;
+      const snrColor = snrVal < 0.9 ? "#e53e3e" : "#38a169";
+      const fixed = [
+        `<td style="${tdBase}">${idx + 1}</td>`,
+        `<td style="${tdBase}">${esc(row.source_id ?? "")}</td>`,
+        `<td style="${tdBase}">${esc(row.md5 ?? "")}</td>`,
+        `<td style="${tdBase}">${row.cut_off_url ? `<a href="${esc(row.cut_off_url)}" target="_blank" style="color:#4A90E2;text-decoration:none;">查看图片</a>` : ""}</td>`,
+        `<td style="${tdBase}max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(row.caption ?? "")}">${esc(row.caption ?? "")}</td>`,
+        `<td style="${tdBase}white-space:pre-line;min-width:160px;">${esc(summaryFn(row))}</td>`,
+        `<td style="${tdBase}color:${snrColor};font-weight:600;">${snrVal.toFixed(4)}</td>`,
+        `<td style="${tdBase}">${row.label_preview_url ? `<a href="${esc(row.label_preview_url)}" target="_blank" style="color:#4A90E2;text-decoration:none;">结果预览</a>` : ""}</td>`,
+        `<td style="${tdBase}"></td>`,
+      ];
+      const errCells = Array.from({ length: maxErrors }, (_, i) => {
+        const e = row.error_list[i];
+        return e
+          ? `<td style="${tdBase}white-space:pre-line;min-width:180px;background:rgba(255,77,79,0.05);">${esc(errorFn(e))}</td>`
+          : `<td style="${tdBase}"></td>`;
+      });
+      const bg = idx % 2 === 1 ? "background:#fafbfc;" : "";
+      return `<tr style="${bg}">${[...fixed, ...errCells].join("")}</tr>`;
+    }).join("");
+
+    return `<div style="overflow:auto;max-height:520px;border:1px solid #e8eaf0;border-radius:8px;">
+      <table style="border-collapse:collapse;width:100%;font-size:13px;">${thead}<tbody>${tbodyRows}</tbody></table>
+    </div>`;
+  }
+
+  const tdBase = "padding:8px 12px;border-bottom:1px solid #f0f2f7;vertical-align:top;";
+  function esc(s) {
+    return String(s == null ? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  // ── 组装完整报告 HTML ──────────────────────────────────────
+  const html = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>标注评估报告 ${dateStr}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI",sans-serif;background:#f5f7fa;color:#333;padding:0 0 60px;}
+  .header{background:#fff;border-bottom:1px solid #e8e8e8;padding:20px 40px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 1px 4px rgba(0,0,0,.05);}
+  .header h1{font-size:20px;font-weight:700;}
+  .header .meta{font-size:13px;color:#888;}
+  .container{max-width:1300px;margin:0 auto;padding:28px 24px;display:flex;flex-direction:column;gap:20px;}
+  .card{background:#fff;border:1px solid #e8e8e8;border-radius:10px;padding:24px;box-shadow:0 2px 8px rgba(0,0,0,.05);}
+  .card-title{font-size:15px;font-weight:600;color:#222;margin-bottom:18px;padding-bottom:12px;border-bottom:1px solid #f0f0f0;}
+  .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;}
+  .stat-item{background:#f8f9ff;border:1px solid #e8eaf0;border-radius:8px;padding:16px 20px;}
+  .stat-label{font-size:12px;color:#888;margin-bottom:6px;}
+  .stat-value{font-size:26px;font-weight:700;color:#222;}
+  .stat-value.good{color:#38a169;}
+  .stat-value.warn{color:#e53e3e;}
+  .charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+  .tab-bar{display:flex;gap:0;border-bottom:2px solid #e8e8e8;margin-bottom:18px;}
+  .tab-btn{padding:8px 20px;font-size:14px;font-family:inherit;border:none;background:none;cursor:pointer;color:#888;border-bottom:2px solid transparent;margin-bottom:-2px;transition:color .15s,border-color .15s;}
+  .tab-btn.active{color:#6366f1;border-bottom-color:#6366f1;font-weight:600;}
+  .tab-panel{display:none;}.tab-panel.active{display:block;}
+  @media(max-width:768px){.charts-grid{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>📊 标注评估报告</h1>
+  <span class="meta">生成时间：${dateStr}</span>
+</div>
+<div class="container">
+
+  <!-- SNR 汇总卡片 -->
+  <div class="card">
+    <div class="card-title">📈 SNR 统计汇总</div>
+    <div class="stats-grid">
+      <div class="stat-item">
+        <div class="stat-label">数据总量</div>
+        <div class="stat-value">${totalRows}</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">总概念点数</div>
+        <div class="stat-value">${totalPoints}</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">总错误数</div>
+        <div class="stat-value ${totalErrors > 0 ? "warn" : "good"}">${totalErrors}</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">加权错误率</div>
+        <div class="stat-value ${errorRate > 0.1 ? "warn" : "good"}">${(errorRate * 100).toFixed(2)}%</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">算术平均 SNR</div>
+        <div class="stat-value ${avgSnr < 0.9 ? "warn" : "good"}">${(avgSnr * 100).toFixed(2)}%</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 错误归因分布图 -->
+  <div class="card">
+    <div class="card-title">📊 错误归因分布</div>
+    <div class="charts-grid">
+      ${buildBarChart(sortedCats, maxCatVal, "一级类目分布")}
+      ${buildBarChart(sortedCat2, sortedCat2.length ? sortedCat2[0][1] : 1, "二级类目分布（Top 15）")}
+    </div>
+  </div>
+
+  <!-- 数据明细 -->
+  <div class="card">
+    <div class="card-title">📋 数据明细</div>
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab(event,'sheet1')">Sheet1 · 机评+人评最终结果</button>
+      <button class="tab-btn" onclick="switchTab(event,'sheet2')">Sheet2 · 机评原始结果</button>
+    </div>
+    <div class="tab-panel active" id="panel-sheet1">
+      ${buildTableHtml(sheet1Rows, formatSummary, formatErrorCell)}
+    </div>
+    <div class="tab-panel" id="panel-sheet2">
+      ${buildTableHtml(sheet2Rows, formatMachineSummary, formatMachineErrorCell)}
+    </div>
+  </div>
+
+</div>
+<script>
+function switchTab(e, name) {
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+  e.target.classList.add("active");
+  document.getElementById("panel-" + name).classList.add("active");
+}
+<\/script>
+</body>
+</html>`;
+
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  const fileDateStr = new Date().toISOString().slice(0, 10);
+  a.href     = url;
+  a.download = `评估报告_${fileDateStr}.html`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
 function downloadXlsx() {
   if (!window._xlsxData) {
     showDownloadError("暂无数据可下载，请先上传文件");
@@ -1388,6 +1603,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // 下载
   downloadBtn.addEventListener("click", downloadXlsx);
   document.getElementById("download-zip-btn").addEventListener("click", downloadZip);
+  document.getElementById("download-report-btn").addEventListener("click", downloadReport);
 
   // Tab 切换
   document.querySelectorAll(".tab-btn").forEach(btn => {
