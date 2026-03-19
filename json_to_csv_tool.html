@@ -1428,23 +1428,27 @@ function downloadReport() {
   <!-- 数据明细 -->
   <div class="card">
     <div class="card-title">📋 数据明细</div>
-    <div style="margin-bottom:18px;">
-      <input type="radio" name="rpt-tab" id="rpt-tab1" checked style="display:none;">
-      <input type="radio" name="rpt-tab" id="rpt-tab2" style="display:none;">
-      <div style="display:flex;gap:0;border-bottom:2px solid #e8e8e8;margin-bottom:18px;">
-        <label for="rpt-tab1" style="padding:8px 20px;font-size:14px;cursor:pointer;color:#888;border-bottom:2px solid transparent;margin-bottom:-2px;font-family:inherit;">Sheet1 · 机评+人评最终结果</label>
-        <label for="rpt-tab2" style="padding:8px 20px;font-size:14px;cursor:pointer;color:#888;border-bottom:2px solid transparent;margin-bottom:-2px;font-family:inherit;">Sheet2 · 机评原始结果</label>
+    <style>
+      .rpt-tab-wrap{position:relative;}
+      .rpt-tab-wrap input[type=radio]{display:none;}
+      .rpt-tab-bar{display:flex;border-bottom:2px solid #e8e8e8;margin-bottom:16px;}
+      .rpt-tab-bar label{padding:8px 20px;font-size:14px;cursor:pointer;color:#888;border-bottom:2px solid transparent;margin-bottom:-2px;}
+      .rpt-tab-bar label:hover{color:#444;}
+      .rpt-panel{display:none;}
+      #rpt-tab1:checked ~ .rpt-tab-bar label[for=rpt-tab1]{color:#6366f1;border-bottom-color:#6366f1;font-weight:600;}
+      #rpt-tab2:checked ~ .rpt-tab-bar label[for=rpt-tab2]{color:#6366f1;border-bottom-color:#6366f1;font-weight:600;}
+      #rpt-tab1:checked ~ #rpt-panel1{display:block;}
+      #rpt-tab2:checked ~ #rpt-panel2{display:block;}
+    </style>
+    <div class="rpt-tab-wrap">
+      <input type="radio" name="rpt-tab" id="rpt-tab1" checked>
+      <input type="radio" name="rpt-tab" id="rpt-tab2">
+      <div class="rpt-tab-bar">
+        <label for="rpt-tab1">Sheet1 · 机评+人评最终结果</label>
+        <label for="rpt-tab2">Sheet2 · 机评原始结果</label>
       </div>
-      <style>
-        #rpt-tab1:checked ~ div label[for=rpt-tab1]{color:#6366f1;border-bottom-color:#6366f1;font-weight:600;}
-        #rpt-tab2:checked ~ div label[for=rpt-tab2]{color:#6366f1;border-bottom-color:#6366f1;font-weight:600;}
-        #rpt-tab1:checked ~ .rpt-panels #rpt-panel1{display:block;}
-        #rpt-tab2:checked ~ .rpt-panels #rpt-panel2{display:block;}
-      </style>
-      <div class="rpt-panels">
-        <div id="rpt-panel1" style="display:none;">${buildTableHtml(sheet1Rows, formatSummary, formatErrorCell)}</div>
-        <div id="rpt-panel2" style="display:none;">${buildTableHtml(sheet2Rows, formatMachineSummary, formatMachineErrorCell)}</div>
-      </div>
+      <div id="rpt-panel1" class="rpt-panel">${buildTableHtml(sheet1Rows, formatSummary, formatErrorCell)}</div>
+      <div id="rpt-panel2" class="rpt-panel">${buildTableHtml(sheet2Rows, formatMachineSummary, formatMachineErrorCell)}</div>
     </div>
   </div>
 
