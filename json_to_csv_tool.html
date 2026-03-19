@@ -1429,8 +1429,8 @@ function downloadReport() {
   <div class="card">
     <div class="card-title">📋 数据明细</div>
     <div class="tab-bar">
-      <button class="tab-btn active" onclick="switchTab(event,'sheet1')">Sheet1 · 机评+人评最终结果</button>
-      <button class="tab-btn" onclick="switchTab(event,'sheet2')">Sheet2 · 机评原始结果</button>
+      <button class="tab-btn active" data-tab="sheet1">Sheet1 · 机评+人评最终结果</button>
+      <button class="tab-btn" data-tab="sheet2">Sheet2 · 机评原始结果</button>
     </div>
     <div class="tab-panel active" id="panel-sheet1">
       ${buildTableHtml(sheet1Rows, formatSummary, formatErrorCell)}
@@ -1442,12 +1442,14 @@ function downloadReport() {
 
 </div>
 <script>
-function switchTab(e, name) {
-  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
-  document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
-  e.target.classList.add("active");
-  document.getElementById("panel-" + name).classList.add("active");
-}
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("panel-" + btn.dataset.tab).classList.add("active");
+  });
+});
 <\/script>
 </body>
 </html>`;
