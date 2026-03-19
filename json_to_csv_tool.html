@@ -772,7 +772,7 @@ function parseCSVText(text) {
       service_param: {
         input: {
           source_id:          sourceId,
-          md5:                "",
+          md5:                row["input.md5"] ?? "",
           cut_off_url:        row["input.url_cos"] ?? "",
           long_long_caption:  row["input.long_long_caption"] ?? "",
           label_preview_url:  row["结果预览"] ?? "",
